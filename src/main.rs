@@ -1,22 +1,21 @@
-#![allow(unused_imports)]
-use std::net::TcpListener;
+mod errors;
+use tokio::net::{TcpListener, TcpStream};
 
-fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
+use crate::errors::RedisErrors;
 
-    // Uncomment this block to pass the first stage
-    //
-    // let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
-    //
-    // for stream in listener.incoming() {
-    //     match stream {
-    //         Ok(_stream) => {
-    //             println!("accepted new connection");
-    //         }
-    //         Err(e) => {
-    //             println!("error: {}", e);
-    //         }
-    //     }
-    // }
+#[tokio::main]
+async fn main() -> Result<(), RedisErrors> {
+
+    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    
+    loop {
+        let (stream, sock_addr) = listener.accept().await?;     
+    }
+}
+
+async fn handle_client(mut stream: TcpStream) {
+
+    let mut buffer = [0u8; 1024];
+
+    
 }
