@@ -10,7 +10,10 @@ async fn main() -> Result<(), RedisErrors> {
     
     loop {
         let (stream, _sock_addr) = listener.accept().await?;     
-        handle_client(stream).await?;
+        
+        tokio::spawn(async move {
+            handle_client(stream).await
+        });
     }
 }
 
@@ -18,7 +21,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), RedisErrors> {
 
     let mut buffer = [0u8; 1024];
     println!("accepted new connection");
-    // loop {
+    loop {
         match stream.read(&mut buffer).await {
             Ok(n) => {
                 // println!("Read {} bytes!", n);
@@ -31,7 +34,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), RedisErrors> {
         }
 
         stream.write_all(b"+PONG\r\n").await?;
-    // }
-    Ok(())
+    }
+    // Ok(())
 }
 
