@@ -15,7 +15,23 @@ async fn main() -> Result<(), RedisErrors> {
 
 async fn handle_client(mut stream: TcpStream) {
 
-    let mut buffer = [0u8; 1024];
-
+    // let mut buffer = [0u8; 1024];
+    println!("accepted new connection");
     
 }
+
+
+// use std::net::TcpListener;
+// fn main() {
+//     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+//     for stream in listener.incoming() {
+//         match stream {
+//             Ok(_stream) => {
+//                 println!("accepted new connection");
+//             }
+//             Err(e) => {
+//                 println!("error: {}", e);
+//             }
+//         }
+//     }
+// }
