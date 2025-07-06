@@ -3,11 +3,12 @@ use std::{collections::HashMap, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex};
 
-use crate::{errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}};
+use crate::{errors::RedisErrors, rdb_persist::RDB, redis_key_value_struct::{get, insert, ValueStruct}};
 
 pub async fn handle_client(
     mut stream: TcpStream, 
-    map: Arc<Mutex<HashMap<String, ValueStruct>>>
+    map: Arc<Mutex<HashMap<String, ValueStruct>>>,
+    rdb: Arc<Mutex<RDB>>
 ) -> Result<(), RedisErrors> {
 
     let mut buffer = [0u8; 1024];
@@ -66,6 +67,26 @@ pub async fn handle_client(
                     // println!("{:?}", value_struct);
                     insert(key.to_string(), value_struct, map.clone()).await;
                     stream.write_all(b"+OK\r\n").await?;
+                } else if cmds[0] == String::from("CONFIG") {
+                    if cmds[1] == String::from("GET") {
+                        if cmds[2] == String::from("dir") {
+                            // println!("wants to read dir");
+                            let rdb_gaurd = rdb.lock().await;
+                            let dirpath = rdb_gaurd.dirpath().await;
+                            // println!("{}", dirpath);
+                            let stream_write_fmt = format!("*2\r\n$3\r\ndir\r\n${}\r\n{}\r\n",&dirpath.len(), dirpath);
+                            stream.write_all(stream_write_fmt.as_bytes()).await?;
+                        } else if cmds[2] == String::from("dbfilename") {
+                            // println!("wants to read dbfilename");
+                            let rdb_gaurd = rdb.lock().await;
+                            let rdb_filepath = rdb_gaurd.rdb_filepath().await;
+                            // println!("{}", rdb_filepath);
+                            let stream_write_fmt = format!("*2\r\n$10\r\ndbfilename\r\n${}\r\n{}\r\n",&rdb_filepath.len(), rdb_filepath);
+                            stream.write_all(stream_write_fmt.as_bytes()).await?;
+                        }
+                    } else if cmds[1] == String::from("SET") {
+
+                    }
                 }
             },
             Err(e) => {
