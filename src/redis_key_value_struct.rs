@@ -78,7 +78,7 @@ pub async fn clean_map(map: SharedMapT) {
         map_guard.retain(|_, v| {
             
             match v.pxat() {
-                Some(expiry) => now.as_millis() >= expiry,
+                Some(expiry) => now.as_millis() <= expiry,
                 None => true,
             }
         });
