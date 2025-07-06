@@ -6,5 +6,8 @@ pub enum RedisErrors {
     Io(#[from] std::io::Error),
 
     #[error("ParseIntError: {}", 0)]
-    ParseInt(#[from] std::num::ParseIntError)
+    ParseInt(#[from] std::num::ParseIntError),
+
+    #[error("SystemTimeError: {}", 0)]
+    SystemTimeError(#[from] std::time::SystemTimeError)
 }

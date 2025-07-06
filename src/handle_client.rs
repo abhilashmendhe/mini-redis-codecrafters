@@ -1,5 +1,5 @@
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex};
 
@@ -44,16 +44,26 @@ pub async fn handle_client(
                         stream.write_all(b"$-1\r\n").await?;
                     }
                 } else if cmds[0] == String::from("SET") {
-                    
+
                     let key = cmds[1].as_str();
                     let value = cmds[2].as_str();
-                    let value_struct = ValueStruct::new(
+                    
+                    // println!("cmds vec len: {}",cmds.len());
+                    let mut value_struct = ValueStruct::new(
                         value.to_string(), 
-                        0, 
-                        0, 
-                        0, 
-                        0
+                        None, 
+                        None, 
                     );
+
+                    if cmds.len() == 5 {
+                        let px = cmds[4].parse::<u128>()?;
+                        let now = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)?;
+                        let now_ms = now.as_millis() + px as u128;
+                        value_struct.set_px(Some(px));
+                        value_struct.set_pxat(Some(now_ms));
+                    }
+                    // println!("{:?}", value_struct);
                     insert(key.to_string(), value_struct, map.clone()).await;
                     stream.write_all(b"+OK\r\n").await?;
                 }

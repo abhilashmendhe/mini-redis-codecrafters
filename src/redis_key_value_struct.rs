@@ -1,27 +1,38 @@
-use std::{collections::HashMap, sync::Arc};
+#![allow(unused)]
+
+use std::{collections::HashMap, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct ValueStruct {
     value: String,
-    ex: usize,    // seconds
-    px: usize,    // milliseconds
-    exat: usize,  // timestamp-seconds
-    pxat: usize   // timestamp-milliseconds
+    px: Option<u128>,    // milliseconds
+    pxat: Option<u128>   // timestamp-milliseconds
 }
 
 impl ValueStruct {
-    pub fn new(value: String, ex: usize, px: usize, exat: usize, pxat: usize) -> Self {
+    pub fn new(value: String, px: Option<u128>, pxat: Option<u128>) -> Self {
         ValueStruct { 
             value, 
-            ex, 
             px, 
-            exat, pxat
+            pxat
         }
     }
     pub fn value(&self) -> String {
         self.value.clone()
+    }
+    pub fn set_px(&mut self, px: Option<u128>) {
+        self.px = px;
+    }
+    pub fn set_pxat(&mut self, pxat: Option<u128>) {
+        self.pxat = pxat;
+    }
+    pub fn px(&self) -> Option<u128> {
+        self.px
+    }
+    pub fn pxat(&self) -> Option<u128> {
+        self.pxat
     }
 }
 
@@ -37,12 +48,39 @@ pub async fn insert(key: String, value: ValueStruct, map: SharedMapT) {
 }
 
 pub async fn get(key: String, map: SharedMapT) -> Option<ValueStruct> {
-    let m_gaurd = map.lock().await;
+    let mut m_gaurd = map.lock().await;
     let value = m_gaurd.get(&key).cloned();
-    if value.is_none() {
-        None
+
+    if let Some(vs) = value {
+        let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap();
+        // println!("in get method - {:?}", vs);
+        if let Some(pxat) = vs.pxat() {
+            if now.as_millis() > pxat {
+                m_gaurd.remove(&key);
+                return None;
+            }
+        }
+        Some(vs)
     } else {
-        value
+        None
     }
 }
 
+pub async fn clean_map(map: SharedMapT) {
+    loop {
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+        let mut map_guard = map.lock().await;
+        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap();
+        map_guard.retain(|_, v| {
+            
+            match v.pxat() {
+                Some(expiry) => now.as_millis() >= expiry,
+                None => true,
+            }
+        });
+    }
+}
