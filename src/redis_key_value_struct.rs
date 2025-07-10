@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 pub struct ValueStruct {
     value: String,
     px: Option<u128>,    // milliseconds
-    pxat: Option<u128>   // timestamp-milliseconds
+    pxat: Option<u128>,   // timestamp-milliseconds
+    saved: bool
 }
 
 impl ValueStruct {
@@ -16,7 +17,8 @@ impl ValueStruct {
         ValueStruct { 
             value, 
             px, 
-            pxat
+            pxat,
+            saved: false
         }
     }
     pub fn value(&self) -> String {
@@ -70,7 +72,7 @@ pub async fn get(key: String, map: SharedMapT) -> Option<ValueStruct> {
 
 pub async fn clean_map(map: SharedMapT) {
     loop {
-        tokio::time::sleep(Duration::from_millis(2500)).await;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
         let mut map_guard = map.lock().await;
         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)

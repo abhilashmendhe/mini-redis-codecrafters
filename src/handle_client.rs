@@ -1,9 +1,10 @@
 
-use std::{collections::HashMap, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::HashMap, fs, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex};
 
-use crate::{errors::RedisErrors, rdb_persist::RDB, redis_key_value_struct::{get, insert, ValueStruct}};
+use crate::{errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}};
+use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn handle_client(
     mut stream: TcpStream, 
@@ -84,8 +85,23 @@ pub async fn handle_client(
                             let stream_write_fmt = format!("*2\r\n$10\r\ndbfilename\r\n${}\r\n{}\r\n",&rdb_filepath.len(), rdb_filepath);
                             stream.write_all(stream_write_fmt.as_bytes()).await?;
                         }
-                    } else if cmds[1] == String::from("SET") {
+                    } else if cmds[1] == String::from("SET") { // This is the CONFIG SET (not setting the kv)
 
+                    }
+                } else if cmds[0] == String::from("KEYS") {
+                    if cmds[1] == String::from("*") {
+                        // Get all keys
+                        let map_gaurd = map.lock().await;
+                        let mut count = 0;
+                        let mut key_str = String::new();
+                        for (key, _value_struct) in map_gaurd.iter() {
+                            key_str.push_str(format!("${}\r\n{}\r\n",key.len(),key).as_str());
+                            count += 1;
+                        }
+                        let mut full_str = format!("*{}\r\n",count);
+                        full_str.push_str(&key_str);
+                        // stream.write_all("+Everything\r\n".as_bytes()).await?;
+                        stream.write_all(full_str.as_bytes()).await?;
                     }
                 }
             },
