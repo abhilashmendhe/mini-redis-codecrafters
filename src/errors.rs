@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Debug, Error)]
 pub enum RedisErrors {
@@ -9,5 +10,8 @@ pub enum RedisErrors {
     ParseInt(#[from] std::num::ParseIntError),
 
     #[error("SystemTimeError: {}", 0)]
-    SystemTimeError(#[from] std::time::SystemTimeError)
+    SystemTimeError(#[from] std::time::SystemTimeError),
+
+    #[error("TokioThreadJoinError: {}", 0)]
+    TokioThreadJoinError(#[from] JoinError)
 }

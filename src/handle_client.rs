@@ -3,17 +3,19 @@ use std::{collections::HashMap, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex};
 
-use crate::{errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}};
+use crate::{errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::replica_info::ReplicaInfo};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn handle_client(
     mut stream: TcpStream, 
     map: Arc<Mutex<HashMap<String, ValueStruct>>>,
-    rdb: Arc<Mutex<RDB>>
+    rdb: Arc<Mutex<RDB>>,
+    server_info: Arc<Mutex<ServerInfo>>,
+    replica_info: Arc<Mutex<ReplicaInfo>>
 ) -> Result<(), RedisErrors> {
 
     let mut buffer = [0u8; 1024];
-    println!("accepted new connection");
+    // println!("accepted new connection");
     loop {
         match stream.read(&mut buffer).await {
             Ok(0) => {
@@ -108,7 +110,13 @@ pub async fn handle_client(
                     let mut s = String::new();
                     if cmds[1].eq("replication") {
                         // println!("Asking info about replication");
-                        s.push_str("$11\r\nrole:master\r\n");
+                        let replica_info_gaurd = replica_info.lock().await;
+                        s.push_str(&replica_info_gaurd.to_string());
+
+                    } else if cmds[1].eq("server") {
+                        let server_info_gaurd = server_info.lock().await;
+                        // println!("{}",server_info_gaurd);
+                        s.push_str(&server_info_gaurd.to_string());
                     }
                     stream.write_all(s.as_bytes()).await?;
                 }

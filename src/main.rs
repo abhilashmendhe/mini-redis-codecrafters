@@ -3,31 +3,28 @@ mod errors;
 mod handle_client;
 mod redis_key_value_struct;
 mod rdb_persistence;
+mod redis_server_info;
+mod replication;
 
 use std::{env::args, sync::Arc};
 
 use tokio::{net::TcpListener, signal};
 
-use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}};
+use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::replica_info::init_replica_info};
 
 use crate::rdb_persistence::{rdb_persist::{init_rdb, save}, read_rdb::read_rdb_file};
 
 #[tokio::main]
 async fn main() -> Result<(), RedisErrors> {
 
-    
     // 1. Read args for RDB persistence and check if folder and file(.rdb) exists
     let args = args().collect::<Vec<String>>();
-    
-    let mut port= 6379;
 
-    if args.len() > 2 {
-        if args[1].eq("--port") {
-            port = args[2].parse::<u16>()?;
-        }
-    }
+    let server_info = init_sever_info(&args).await?;
 
-    let rdb = init_rdb(args)?;
+    let replica_info = init_replica_info(&args).await?;
+
+    let rdb = init_rdb(&args)?;
     
     let map = init_map();
 
@@ -39,16 +36,18 @@ async fn main() -> Result<(), RedisErrors> {
         },
     }
 
-    let map2 = Arc::clone(&map);
-
     // Regular clean-up of keys in redis
+    let map2 = Arc::clone(&map);
     tokio::spawn(async move {
         let _ = clean_map(map2).await;
     });
 
     // Create a tcp redis-server on port ::6379
-    let listener = TcpListener::bind(format!("127.0.0.1:{}",port)).await?;
-    
+    let server_info_gaurd = server_info.lock().await;
+    let ip_port = format!("{}:{}",server_info_gaurd.listener_info.bind_ipv4(),server_info_gaurd.listener_info.port());
+    let listener = TcpListener::bind(ip_port).await?;
+    std::mem::drop(server_info_gaurd); 
+
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -56,8 +55,10 @@ async fn main() -> Result<(), RedisErrors> {
                     Ok((stream, _sock_addr)) => {
                         let map1 = Arc::clone(&map);
                         let rdb1 = Arc::clone(&rdb);
+                        let server_info1 = Arc::clone(&server_info);
+                        let replica_info1 = Arc::clone(&replica_info);
                         tokio::spawn(async move {
-                            handle_client(stream, map1, rdb1).await
+                            handle_client(stream, map1, rdb1, server_info1, replica_info1).await
                         });
                     },
                     Err(e) => {

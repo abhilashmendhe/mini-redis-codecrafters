@@ -12,7 +12,7 @@ pub struct RDB {
 
 type SharedRDBStructT = Arc<Mutex<RDB>>;
 
-pub fn init_rdb(args: Vec<String>) -> Result<SharedRDBStructT, RedisErrors> {
+pub fn init_rdb(args: &Vec<String>) -> Result<SharedRDBStructT, RedisErrors> {
     let mut dir_path = "".to_string();
     let mut dbfile_path = "".to_string();
     if args.len() > 4 {
