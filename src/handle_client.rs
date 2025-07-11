@@ -30,7 +30,8 @@ pub async fn handle_client(
                 
                 if cmds[0].to_lowercase() == String::from("ping") {
 
-                    stream.write_all(b"+PONG\r\n").await?;
+                    stream.write_all(b"+PONG\r\n").await?;    
+
                 } else if cmds[0].to_lowercase() == String::from("echo") {
 
                     stream.write_all(format!("+{}\r\n",cmds[1]).as_bytes()).await?;

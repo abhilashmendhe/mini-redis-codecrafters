@@ -47,7 +47,7 @@ async fn main() -> Result<(), RedisErrors> {
     let ip_port = format!("{}:{}",server_info_gaurd.listener_info.bind_ipv4(),server_info_gaurd.listener_info.port());
     let listener = TcpListener::bind(ip_port).await?;
     std::mem::drop(server_info_gaurd); 
-
+    
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
