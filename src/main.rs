@@ -18,11 +18,9 @@ async fn main() -> Result<(), RedisErrors> {
     
     // 1. Read args for RDB persistence and check if folder and file(.rdb) exists
     let args = args().collect::<Vec<String>>();
-    // // println!("{:?}", args);
-
+    
     let mut port= 6379;
 
-    println!("{:?}",args);
     if args.len() > 2 {
         if args[1].eq("--port") {
             port = args[2].parse::<u16>()?;

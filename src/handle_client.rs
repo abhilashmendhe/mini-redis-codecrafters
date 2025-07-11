@@ -103,6 +103,14 @@ pub async fn handle_client(
                         // stream.write_all("+Everything\r\n".as_bytes()).await?;
                         stream.write_all(full_str.as_bytes()).await?;
                     }
+                } else if cmds[0].eq("INFO") {
+
+                    let mut s = String::new();
+                    if cmds[1].eq("replication") {
+                        // println!("Asking info about replication");
+                        s.push_str("$11\r\nrole:master\r\n");
+                    }
+                    stream.write_all(s.as_bytes()).await?;
                 }
             },
             Err(e) => {
