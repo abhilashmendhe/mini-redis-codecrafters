@@ -111,14 +111,18 @@ pub async fn handle_client(
                     if cmds[1].eq("replication") {
                         // println!("Asking info about replication");
                         let replica_info_gaurd = replica_info.lock().await;
+                        // println!("{}",replica_info_gaurd.to_string());
                         s.push_str(&replica_info_gaurd.to_string());
-
+                        stream.write_all(s.as_bytes()).await?;
+                        // stream.write_all("$33\r\nrole:master\r\nmaster_repl_offset:0\r\n".as_bytes()).await?;
+                
                     } else if cmds[1].eq("server") {
                         let server_info_gaurd = server_info.lock().await;
                         // println!("{}",server_info_gaurd);
                         s.push_str(&server_info_gaurd.to_string());
+                        stream.write_all(s.as_bytes()).await?;
                     }
-                    stream.write_all(s.as_bytes()).await?;
+
                 }
             },
             Err(e) => {

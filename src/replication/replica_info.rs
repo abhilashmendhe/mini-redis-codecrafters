@@ -43,7 +43,9 @@ pub async fn init_replica_info(args: &Vec<String>) -> Result<SharedReplicaInfoEn
                                 master_host,
                                 master_port,
                                 0,
-                                slave0
+                                slave0,
+                                master_replid,
+                                master_repl_offset
                             );
         Ok(Arc::new(Mutex::new(ReplicaInfo::SLAVE(rep_info))))
 
