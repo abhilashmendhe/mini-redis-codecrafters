@@ -273,19 +273,19 @@ pub async fn init_sever_info(args: &Vec<String>) -> Result<SharedServerInfoT, Re
         }
         if args[3].eq("--port") {
             tcp_port = args[4].parse::<u16>()?;
-            if tcp_port != 6379 {
+            // if tcp_port != 6379 {
                 // Generate different hash id which run_id
-                run_id = generate_run_id(server_time_info.start_server_time().elapsed().as_micros(), process_id);
-            }
+            run_id = generate_run_id(server_time_info.start_server_time().elapsed().as_micros(), process_id);
+            // }
         }
     }
     if args.len() > 2 {
         if args[1].eq("--port") {
             tcp_port = args[2].parse::<u16>()?;
-            if tcp_port != 6379 {
+            // if tcp_port != 6379 {
                 // Generate different hash id which run_id
-                run_id = generate_run_id(server_time_info.start_server_time().elapsed().as_micros(), process_id);
-            }
+            run_id = generate_run_id(server_time_info.start_server_time().elapsed().as_micros(), process_id);
+            // }
         }
     }
 

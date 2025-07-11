@@ -26,12 +26,12 @@ pub async fn init_replica_info(args: &Vec<String>) -> Result<SharedReplicaInfoEn
     let mut role = String::new();
     let connected_slaves = 0;
     let slave0 = None;
-
+    let master_replid = String::from("8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb");
+    let master_repl_offset = 0;
     if args.len() > 4 {
         // slave config
         let mut master_host = String::new();
         let mut master_port = 0;
-
         if args[3].eq("--replicaof") {
             role.push_str("slave");
             let host_port = args[4].split_whitespace().collect::<Vec<_>>();
@@ -53,7 +53,9 @@ pub async fn init_replica_info(args: &Vec<String>) -> Result<SharedReplicaInfoEn
         let master_rep_info = MasterReplicaInfo::new(
                         role,
                         connected_slaves,
-                        slave0
+                        slave0,
+                        master_replid,
+                        master_repl_offset
                     );
         Ok(Arc::new(Mutex::new(ReplicaInfo::MASTER(master_rep_info))))
     }

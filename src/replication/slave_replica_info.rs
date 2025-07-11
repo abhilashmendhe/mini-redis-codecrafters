@@ -40,6 +40,7 @@ impl Display for SlaveReplicaInfo {
 
         let role = format!("role:{}",self.role);
         let role_se = format!("${}\r\n{}\r\n",role.len(), role);
+
         write!(f, "{}",role_se)
     }
 }
