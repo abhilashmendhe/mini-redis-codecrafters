@@ -20,6 +20,15 @@ async fn main() -> Result<(), RedisErrors> {
     let args = args().collect::<Vec<String>>();
     // // println!("{:?}", args);
 
+    let mut port= 6379;
+
+    println!("{:?}",args);
+    if args.len() > 2 {
+        if args[1].eq("--port") {
+            port = args[2].parse::<u16>()?;
+        }
+    }
+
     let rdb = init_rdb(args)?;
     
     let map = init_map();
@@ -40,7 +49,7 @@ async fn main() -> Result<(), RedisErrors> {
     });
 
     // Create a tcp redis-server on port ::6379
-    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    let listener = TcpListener::bind(format!("127.0.0.1:{}",port)).await?;
     
     loop {
         tokio::select! {
