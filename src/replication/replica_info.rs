@@ -1,6 +1,6 @@
 use std::{fmt::Display, sync::Arc};
 
-use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
+use tokio::sync::Mutex;
 
 use crate::{errors::RedisErrors, replication::{master_replica_info::MasterReplicaInfo, slave_replica_info::SlaveReplicaInfo}};
 
@@ -48,17 +48,6 @@ pub async fn init_replica_info(args: &Vec<String>) -> Result<SharedReplicaInfoEn
                                 master_repl_offset
                             );
 
-        let master_addr = format!("{}:{}",master_host,master_port);
-        if let Ok(mut stream) = TcpStream::connect(&master_addr).await {
-            // println!("Sending a PING to master server!");
-            // write a hello world message
-            let message = "*1\r\n$4\r\nPING\r\n";
-            // let _ = stream.write(message.as_bytes());
-            let _ = stream.write(message.as_bytes()).await?;
-            let _ = stream.flush().await;
-        } else {
-            eprintln!("Failed to connect to {}", &master_addr);
-        }
         Ok(Arc::new(Mutex::new(ReplicaInfo::SLAVE(rep_info))))
 
     } else {

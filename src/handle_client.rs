@@ -24,8 +24,7 @@ pub async fn handle_client(
             },
             Ok(n) => {
                 let _recv_msg = String::from_utf8_lossy(&buffer[..n]);
-                // println!("{}", _recv_msg);
-                // println!("{:?}",buffer);
+                
                 let cmds = parse_recv_bytes(&buffer[..n]).await?;
                 
                 if cmds[0].to_lowercase() == String::from("ping") {
@@ -124,6 +123,16 @@ pub async fn handle_client(
                         stream.write_all(s.as_bytes()).await?;
                     }
 
+                } 
+                else if _recv_msg.eq("*1\r\n$4\r\nPING\r\n") {
+                    println!("Received 1st handshake for Ping!");
+                    stream.write_all(b"+PONG\r\n").await?;
+                } else if _recv_msg.eq("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n") {
+                    println!("Received 2nd handshake for Replconf!");
+                    stream.write_all(b"+OK\r\n").await?;
+                } else if _recv_msg.eq("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n") {
+                    println!("Received 3nd handshake for Replconf psync!");
+                    stream.write_all(b"+OK\r\n").await?;
                 }
             },
             Err(e) => {

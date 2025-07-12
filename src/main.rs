@@ -10,7 +10,7 @@ use std::{env::args, sync::Arc};
 
 use tokio::{net::TcpListener, signal};
 
-use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::replica_info::init_replica_info};
+use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::{init_replica_info, ReplicaInfo}}};
 
 use crate::rdb_persistence::{rdb_persist::{init_rdb, save}, read_rdb::read_rdb_file};
 
@@ -48,6 +48,10 @@ async fn main() -> Result<(), RedisErrors> {
     let listener = TcpListener::bind(ip_port).await?;
     std::mem::drop(server_info_gaurd); 
     
+    // Call handshake function
+    let replica_info2 = Arc::clone(&replica_info);
+    handshake(replica_info2).await?;
+
     loop {
         tokio::select! {
             res_acc = listener.accept() => {

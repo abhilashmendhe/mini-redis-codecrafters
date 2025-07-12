@@ -37,6 +37,12 @@ impl SlaveReplicaInfo {
             master_repl_offset
         }
     }
+    pub fn master_host(&self) -> String {
+        self.master_host.to_string()
+    }
+    pub fn master_port(&self) -> u16 {
+        self.master_port
+    }
 }
 
 impl Display for SlaveReplicaInfo {
