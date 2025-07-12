@@ -64,6 +64,21 @@ async fn third_handshake(_slave_replica_info: &SlaveReplicaInfo, stream: &mut Tc
     let len = stream.read(&mut buf).await?;
     let message = String::from_utf8_lossy(&buf[..len]);
     println!("Third handshake Received: {}", message);
+    if message.eq("+OK\r\n") {
+        final_handshake(_slave_replica_info, stream).await?;
+    }
+    Ok(())
+}
 
+async fn final_handshake(_slave_replica_info: &SlaveReplicaInfo, stream: &mut TcpStream) -> Result<(), RedisErrors> {
+    
+    let _ = stream.write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n".as_bytes()).await?;
+    let _ = stream.flush().await;
+    // read the incoming message from master server
+    let mut buf = [0 as u8; 1024];
+    let len = stream.read(&mut buf).await?;
+    let message = String::from_utf8_lossy(&buf[..len]);
+    println!("Final handshake Received: {}", message);
+    
     Ok(())
 }
