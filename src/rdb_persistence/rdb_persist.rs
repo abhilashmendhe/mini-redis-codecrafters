@@ -58,11 +58,11 @@ pub async fn save(rdb: Arc<Mutex<RDB>>) -> Result<(), RedisErrors> {
         fs::create_dir(rdb_m_gaurd.dirpath().await)?;
     }
     // 1.1 Header and meta data in bytes
-    let mut header_meta_bytes = _decode_hex_str(
+    let mut header_meta_bytes = decode_hex_str(
         String::from("524544495330303131FA0972656469732D76657206362E302E3136")
     );
     // 1.2 End of file in bytes
-    let end_bytes = _decode_hex_str(String::from("FF893bb74ef80f7719"));
+    let end_bytes = decode_hex_str(String::from("FF893bb74ef80f7719"));
     
     // 1.3 Fetch/Read all key-pairs from map and turn them into bytes
 
@@ -77,7 +77,7 @@ pub async fn save(rdb: Arc<Mutex<RDB>>) -> Result<(), RedisErrors> {
     Ok(())
 }
 
-fn _decode_hex_str(st: String) -> Vec<u8> {
+fn decode_hex_str(st: String) -> Vec<u8> {
     (0..st.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&st[i..i + 2], 16).unwrap())

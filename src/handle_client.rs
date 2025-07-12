@@ -136,6 +136,17 @@ pub async fn handle_client(
                 } else if _recv_msg.eq("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n") {
                     println!("Receieved final handshake for PSYNC ?");
                     stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n").await?;
+
+                    let hex_str = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
+                    let contents = (0..hex_str.len())
+                        .step_by(2)
+                        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).unwrap())
+                        .collect::<Vec<_>>();
+
+                    let header = format!("${}\r\n", contents.len());
+                    stream.write_all(header.as_bytes()).await?;
+                    stream.write_all(&contents).await?;
+                
                 }
             },
             Err(e) => {

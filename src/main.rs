@@ -52,6 +52,7 @@ async fn main() -> Result<(), RedisErrors> {
     let replica_info2 = Arc::clone(&replica_info);
     handshake(replica_info2).await?;
 
+    println!("Done handshake");
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -78,7 +79,7 @@ async fn main() -> Result<(), RedisErrors> {
     }
 
     println!("Gracefully shutting down redis server!");
-    // save(rdb.clone()).await?; 
+    save(rdb.clone()).await?; 
     Ok(())
     
 }
