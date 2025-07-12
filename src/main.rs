@@ -10,7 +10,7 @@ use std::{env::args, sync::Arc};
 
 use tokio::{net::TcpListener, signal};
 
-use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::{init_replica_info, ReplicaInfo}}};
+use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::{init_replica_info}}};
 
 use crate::rdb_persistence::{rdb_persist::{init_rdb, save}, read_rdb::read_rdb_file};
 

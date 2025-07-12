@@ -133,6 +133,9 @@ pub async fn handle_client(
                 } else if _recv_msg.eq("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n") {
                     println!("Received 3nd handshake for Replconf psync!");
                     stream.write_all(b"+OK\r\n").await?;
+                } else if _recv_msg.eq("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n") {
+                    println!("Receieved final handshake for PSYNC ?");
+                    stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n").await?;
                 }
             },
             Err(e) => {
