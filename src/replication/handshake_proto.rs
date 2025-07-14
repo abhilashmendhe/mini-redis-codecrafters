@@ -83,7 +83,7 @@ pub async fn handshake(
                     Ok(n) => {
                         // println!("From server: {}", String::from_utf8_lossy(&buf[..n]));
                         if let Ok(cmds) = parse_recv_bytes(&mut buf).await {
-                            // println!("{:?}",cmds);
+                            println!("{:?}",cmds);
                             if cmds[0] == String::from("SET") {
 
                                 let key = cmds[1].as_str();
