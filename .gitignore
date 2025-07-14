@@ -13,3 +13,4 @@ all_dumps/
 dumps/
 dump.rdb
 script*
+src/replication_tmp

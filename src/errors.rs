@@ -1,5 +1,7 @@
+use std::net::SocketAddr;
+
 use thiserror::Error;
-use tokio::task::JoinError;
+use tokio::{sync::mpsc::error::SendError, task::JoinError};
 
 #[derive(Debug, Error)]
 pub enum RedisErrors {
@@ -13,5 +15,8 @@ pub enum RedisErrors {
     SystemTimeError(#[from] std::time::SystemTimeError),
 
     #[error("TokioThreadJoinError: {}", 0)]
-    TokioThreadJoinError(#[from] JoinError)
+    TokioThreadJoinError(#[from] JoinError),
+
+    #[error("SendError to channel: {}", 0)]
+    SendErrorToChannel(#[from] SendError<(SocketAddr, Vec<u8>)>)
 }

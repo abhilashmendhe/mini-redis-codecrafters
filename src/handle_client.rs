@@ -1,51 +1,81 @@
 
-use std::{collections::HashMap, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
 
-use crate::{errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::replica_info::ReplicaInfo};
+use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::replica_info::ReplicaInfo};
 use crate::rdb_persistence::rdb_persist::RDB;
 
-pub async fn handle_client(
-    mut stream: TcpStream, 
-    map: Arc<Mutex<HashMap<String, ValueStruct>>>,
+pub async fn read_handler(
+    mut reader: tokio::net::tcp::OwnedReadHalf,
+    sock_addr: SocketAddr,
+    connections: SharedConnectionHashMapT,
+    kv_map: Arc<Mutex<HashMap<String, ValueStruct>>>,
     rdb: Arc<Mutex<RDB>>,
     server_info: Arc<Mutex<ServerInfo>>,
     replica_info: Arc<Mutex<ReplicaInfo>>
 ) -> Result<(), RedisErrors> {
 
+    println!("Accepted new connection from: {}",sock_addr);
+    let mut role = String::new();
+    {
+        let replica_info_gaurd = replica_info.lock().await;
+        role.push_str(&replica_info_gaurd.role());
+    }
     let mut buffer = [0u8; 1024];
-    // println!("accepted new connection");
     loop {
-        match stream.read(&mut buffer).await {
+        match reader.read(&mut buffer).await {
             Ok(0) => {
-                // println!("Client disconnected");
+                println!("0 bytes received");
+                let mut clients_ports = vec![];
+                {
+                    let conn_gaurd = connections.lock().await;
+                    for (k, (_tx, _flag)) in conn_gaurd.iter() {
+                        // println!("key: {}, flag: {}", k, _flag);
+                        if !*_flag {
+                            clients_ports.push(*k);
+                        }
+                    }
+                }
+                for port in clients_ports {
+                    println!("Client {}:{}, disconnected....", sock_addr.ip(), sock_addr.port());
+                    connections.lock().await.remove(&port);
+                }
+                println!();
                 return Ok(());
             },
             Ok(n) => {
+
                 let _recv_msg = String::from_utf8_lossy(&buffer[..n]);
-                
                 let cmds = parse_recv_bytes(&buffer[..n]).await?;
-                
-                if cmds[0].to_lowercase() == String::from("ping") {
-
-                    stream.write_all(b"+PONG\r\n").await?;    
-
-                } else if cmds[0].to_lowercase() == String::from("echo") {
-
-                    stream.write_all(format!("+{}\r\n",cmds[1]).as_bytes()).await?;
+                println!("cmds: {:?}",cmds);
+                if cmds[0].eq("PING") {
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, b"+PONG\r\n".to_vec()))?;
+                    }
+                } else if cmds[0].eq("ECHO") {
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, format!("+{}\r\n",cmds[1]).as_bytes().to_vec()))?;
+                    }
+                } else if cmds[0].eq("BYE") {
+                    println!("Bye received from replica: {}",sock_addr);
+                    connections.lock().await.remove(&sock_addr.port());
                 } else if cmds[0] == String::from("GET") {
 
                     let key = cmds[1].as_str();
-                    let value_struct = get(key.to_string(), map.clone()).await;
+                    let value_struct = get(key.to_string(), kv_map.clone()).await;
 
                     if let Some(vs) = value_struct {
                         let value = vs.value();
                         let value_len = value.len();
                         let stream_write_fmt = format!("${}\r\n{}\r\n", value_len, value);
-                        stream.write_all(stream_write_fmt.as_bytes()).await?;
+                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                            client_tx.send((sock_addr, stream_write_fmt.as_bytes().to_vec()))?;
+                        }
                     } else {
-                        stream.write_all(b"$-1\r\n").await?;
+                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                            client_tx.send((sock_addr, b"$-1\r\n".to_vec()))?;
+                        }
                     }
                 } else if cmds[0] == String::from("SET") {
 
@@ -67,9 +97,22 @@ pub async fn handle_client(
                         value_struct.set_px(Some(px));
                         value_struct.set_pxat(Some(now_ms));
                     }
-                    // println!("{:?}", value_struct);
-                    insert(key.to_string(), value_struct, map.clone()).await;
-                    stream.write_all(b"+OK\r\n").await?;
+                    insert(key.to_string(), value_struct, kv_map.clone()).await;
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
+                    }
+
+                    {
+                        let mut conn_gaurd = connections.lock().await;
+                        for (_k, (_tx, _flag)) in conn_gaurd.iter_mut() {
+                            
+                            if *_flag {
+                                println!("key: {}, flag: {}", _k, _flag);
+                                _tx.send((sock_addr, buffer[..n].to_vec()))?;
+                            } 
+                        }
+                    }
+        
                 } else if cmds[0] == String::from("CONFIG") {
                     if cmds[1] == String::from("GET") {
                         if cmds[2] == String::from("dir") {
@@ -78,14 +121,18 @@ pub async fn handle_client(
                             let dirpath = rdb_gaurd.dirpath().await;
                             // println!("{}", dirpath);
                             let stream_write_fmt = format!("*2\r\n$3\r\ndir\r\n${}\r\n{}\r\n",&dirpath.len(), dirpath);
-                            stream.write_all(stream_write_fmt.as_bytes()).await?;
+                            if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                                client_tx.send((sock_addr, stream_write_fmt.as_bytes().to_vec()))?;
+                            }
                         } else if cmds[2] == String::from("dbfilename") {
                             // println!("wants to read dbfilename");
                             let rdb_gaurd = rdb.lock().await;
                             let rdb_filepath = rdb_gaurd.rdb_filepath().await;
                             // println!("{}", rdb_filepath);
                             let stream_write_fmt = format!("*2\r\n$10\r\ndbfilename\r\n${}\r\n{}\r\n",&rdb_filepath.len(), rdb_filepath);
-                            stream.write_all(stream_write_fmt.as_bytes()).await?;
+                            if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                                client_tx.send((sock_addr, stream_write_fmt.as_bytes().to_vec()))?;
+                            }
                         }
                     } else if cmds[1] == String::from("SET") { // This is the CONFIG SET (not setting the kv)
 
@@ -93,7 +140,7 @@ pub async fn handle_client(
                 } else if cmds[0] == String::from("KEYS") {
                     if cmds[1] == String::from("*") {
                         // Get all keys
-                        let map_gaurd = map.lock().await;
+                        let map_gaurd = kv_map.lock().await;
                         let mut count = 0;
                         let mut key_str = String::new();
                         for (key, _value_struct) in map_gaurd.iter() {
@@ -103,7 +150,9 @@ pub async fn handle_client(
                         let mut full_str = format!("*{}\r\n",count);
                         full_str.push_str(&key_str);
                         // stream.write_all("+Everything\r\n".as_bytes()).await?;
-                        stream.write_all(full_str.as_bytes()).await?;
+                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                            client_tx.send((sock_addr, full_str.as_bytes().to_vec()))?;
+                        }
                     }
                 } else if cmds[0].eq("INFO") {
 
@@ -113,30 +162,46 @@ pub async fn handle_client(
                         let replica_info_gaurd = replica_info.lock().await;
                         // println!("{}",replica_info_gaurd.to_string());
                         s.push_str(&replica_info_gaurd.to_string());
-                        stream.write_all(s.as_bytes()).await?;
+                        
+                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                            client_tx.send((sock_addr, s.as_bytes().to_vec()))?;
+                        }
                         // stream.write_all("$33\r\nrole:master\r\nmaster_repl_offset:0\r\n".as_bytes()).await?;
                 
                     } else if cmds[1].eq("server") {
                         let server_info_gaurd = server_info.lock().await;
                         // println!("{}",server_info_gaurd);
                         s.push_str(&server_info_gaurd.to_string());
-                        stream.write_all(s.as_bytes()).await?;
+                        
+                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                            client_tx.send((sock_addr, s.as_bytes().to_vec()))?;
+                        }
                     }
 
-                } 
-                else if _recv_msg.eq("*1\r\n$4\r\nPING\r\n") {
-                    println!("Received 1st handshake for Ping!");
-                    stream.write_all(b"+PONG\r\n").await?;
-                } else if _recv_msg.eq("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n") {
-                    println!("Received 2nd handshake for Replconf!");
-                    stream.write_all(b"+OK\r\n").await?;
-                } else if _recv_msg.eq("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n") {
-                    println!("Received 3nd handshake for Replconf psync!");
-                    stream.write_all(b"+OK\r\n").await?;
-                } else if _recv_msg.eq("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n") {
-                    println!("Receieved final handshake for PSYNC ?");
-                    stream.write_all(b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n").await?;
+                } else if cmds[0].eq("REPLCONF") {
+                    if cmds[1].eq("listening-port") {
+                        println!("Received 2nd handshake for Replconf!");
+                        let _port = cmds[2].parse::<u16>()?;
+                        let _ip = sock_addr.ip().to_string();
+                        
+                        replica_info.lock().await.add_slave(_ip, _port);
+                        if let Some((client_tx, _flag)) = connections.lock().await.get_mut(&sock_addr.port()) {
+                            *_flag = true;
+                            client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
+                        }
+                    } else if cmds[1].eq("capa") {
+                        println!("Received 3nd handshake for Replconf psync!");
+                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                            client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
+                        }
+                    }
 
+                } else if cmds[0].eq("PSYNC") {
+                    println!("Receieved final handshake for PSYNC ?");
+                    
+                    // if let Some(client_tx) = connections.lock().await.get(&sock_addr.port()) {
+                    //     client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
+                    // }
                     let hex_str = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2";
                     let contents = (0..hex_str.len())
                         .step_by(2)
@@ -144,19 +209,49 @@ pub async fn handle_client(
                         .collect::<Vec<_>>();
 
                     let header = format!("${}\r\n", contents.len());
-                    stream.write_all(header.as_bytes()).await?;
-                    stream.write_all(&contents).await?;
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
+                        client_tx.send((sock_addr, header.as_bytes().to_vec()))?;
+                        client_tx.send((sock_addr, contents))?;
+                    }
                 
                 }
+
             },
             Err(e) => {
                 eprintln!("Read error: {}", e);
+                connections.lock().await.remove(&sock_addr.port());
+                return Err(RedisErrors::Io(e));
             }
         }
     }
 }
 
-async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>{
+pub async fn write_handler(
+    mut writer: tokio::net::tcp::OwnedWriteHalf,
+    mut rx: RecvChannelT,
+    connections: SharedConnectionHashMapT
+) {
+    // println!("Write handler!");
+    while let Some(recv_bytes) = rx.recv().await {
+        let (_sock_addr, reply_bytes) = recv_bytes; 
+        println!("In write_handler - {}",_sock_addr);
+        match writer.write_all(&reply_bytes).await {
+            Ok(_) => {
+                println!("Writing data back to client: {}", _sock_addr);
+            },
+            Err(e) => {
+                println!("Error in write_handler: {e}");
+                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                    connections.lock().await.remove(&_sock_addr.port());
+                }
+                break;
+            },
+        }
+    }
+}
+
+pub async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>{
     
     // 1. parse the first line that tells how many args were passed
     let mut ind = 0;

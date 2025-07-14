@@ -5,20 +5,25 @@ mod redis_key_value_struct;
 mod rdb_persistence;
 mod redis_server_info;
 mod replication;
+mod connection_handling;
+mod master_or_slave;
 
-use std::{env::args, sync::Arc};
+use std::{env::args, net::SocketAddr, sync::Arc};
 
-use tokio::{net::TcpListener, signal};
+use tokio::{net::TcpListener, signal, sync::mpsc};
 
-use crate::{errors::RedisErrors, handle_client::handle_client, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::{init_replica_info}}};
+use crate::{connection_handling::{init_connection_channel, read_connections_simul}, errors::RedisErrors, handle_client::{read_handler, write_handler}, master_or_slave::{run_master, run_slave}, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::init_replica_info}};
 
 use crate::rdb_persistence::{rdb_persist::{init_rdb, save}, read_rdb::read_rdb_file};
+
 
 #[tokio::main]
 async fn main() -> Result<(), RedisErrors> {
 
     // 1. Read args for RDB persistence and check if folder and file(.rdb) exists
     let args = args().collect::<Vec<String>>();
+
+    let connections = init_connection_channel().await;
 
     let server_info = init_sever_info(&args).await?;
 
@@ -36,46 +41,33 @@ async fn main() -> Result<(), RedisErrors> {
         },
     }
 
+    // // Read keys and values periodically to check if client is inserted on not
+    // // The below function call is temporary. Should not run on prod servers.
+    // let connections1 = Arc::clone(&connections);
+    // tokio::spawn(async move {
+    //     read_connections_simul(connections1).await;
+    // });
+
     // Regular clean-up of keys in redis
     let map2 = Arc::clone(&map);
     tokio::spawn(async move {
         let _ = clean_map(map2).await;
     });
 
-    // Create a tcp redis-server on port ::6379
-    let server_info_gaurd = server_info.lock().await;
-    let ip_port = format!("{}:{}",server_info_gaurd.listener_info.bind_ipv4(),server_info_gaurd.listener_info.port());
-    let listener = TcpListener::bind(ip_port).await?;
-    std::mem::drop(server_info_gaurd); 
     
-    // Call handshake function
-    let replica_info2 = Arc::clone(&replica_info);
-    handshake(replica_info2).await?;
+    
+    let replica_info1 = Arc::clone(&replica_info);
+    let replica_info_gaurd = replica_info1.lock().await;
+    let rdb1 = Arc::clone(&rdb);
+    let role = replica_info_gaurd.role();
+    std::mem::drop(replica_info_gaurd);
 
-    println!("Done handshake");
-    loop {
-        tokio::select! {
-            res_acc = listener.accept() => {
-                match res_acc {
-                    Ok((stream, _sock_addr)) => {
-                        let map1 = Arc::clone(&map);
-                        let rdb1 = Arc::clone(&rdb);
-                        let server_info1 = Arc::clone(&server_info);
-                        let replica_info1 = Arc::clone(&replica_info);
-                        tokio::spawn(async move {
-                            handle_client(stream, map1, rdb1, server_info1, replica_info1).await
-                        });
-                    },
-                    Err(e) => {
-                        eprintln!("Accept error: {}", e);
-                    },
-                }
-            }
-            _  = signal::ctrl_c() => {
-                println!("\nCtrl-c command received!");
-                break;
-            }
-        }
+    if role.eq("master") {
+        println!("Call master code async.");
+        run_master(connections, map, rdb1, server_info, replica_info).await?;
+    } else {
+        println!("Call slave code async.");
+        run_slave(connections, map, rdb1, server_info, replica_info).await?;
     }
 
     println!("Gracefully shutting down redis server!");
@@ -83,20 +75,3 @@ async fn main() -> Result<(), RedisErrors> {
     Ok(())
     
 }
-
-/*
-// // read_rdb_file("./all_dumps/dump_one_key.rdb");
-    // println!("");
-    // // read_rdb_file("./all_dumps/dump20.rdb");
-    // // println!("");
-    // read_rdb_file("./dumps/dump100.rdb");
-    // // println!("");
-    // read_rdb_file("./dumps/grape.rdb");
-    // println!();
-    // read_rdb_file("./dumps/pear.rdb");
-    // println!();
-    // read_rdb_file("./dumps/strawberry.rdb");
-    // // read_rdb_file("./dumps/dump_ints2.rdb");
-    // println!();
-    // // read_rdb_file("./dumps/dump_with_dbindex1.rdb");
-*/
