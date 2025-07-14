@@ -62,15 +62,70 @@ async fn main() -> Result<(), RedisErrors> {
     let role = replica_info_gaurd.role();
     std::mem::drop(replica_info_gaurd);
 
-    if role.eq("master") {
-        println!("Call master code async.");
-        run_master(connections, map, rdb1, server_info, replica_info).await?;
-    } else {
-        println!("Call slave code async.");
-        run_slave(connections, map, rdb1, server_info, replica_info).await?;
-    }
+    // if role.eq("master") {
+    //     println!("Call master code async.");
+    //     run_master(connections, map, rdb1, server_info, replica_info).await?;
+    // } else {
+    //     println!("Call slave code async.");
+    //     run_slave(connections, map, rdb1, server_info, replica_info).await?;
+    // }
 
-    println!("Gracefully shutting down redis server!");
+
+///////////////////////////////////////////////////
+ // spawn the local server listener that handles normal clients
+    let connections1 = Arc::clone(&connections);
+    let kv_map1 = Arc::clone(&map);
+    let rdb1 = Arc::clone(&rdb);
+    let server_info1 = Arc::clone(&server_info);
+    let replica_info1 = Arc::clone(&replica_info);
+    tokio::spawn(async move {
+        let _ = run_master(connections1, kv_map1, rdb1, server_info1, replica_info1).await;
+    });
+
+    // spawn the replication loop
+    let connections2 = Arc::clone(&connections);
+    let kv_map2 = Arc::clone(&map);
+    let rdb2 = Arc::clone(&rdb);
+    let server_info2 = Arc::clone(&server_info);
+    let replica_info2 = Arc::clone(&replica_info);
+    tokio::spawn(async move {
+        loop {
+            {
+                let role_guard = replica_info2.lock().await;
+                if role_guard.role() != "slave" {
+                    println!("Not a slave anymore. Stopping replication loop.");
+                    break;
+                }
+            }
+            println!("Starting handshake to master...");
+            let result = handshake(
+                connections2.clone(),
+                kv_map2.clone(),
+                rdb2.clone(),
+                server_info2.clone(),
+                replica_info2.clone()
+            ).await;
+            match result {
+                Ok(_) => println!("Handshake finished (maybe master disconnected). Retrying soon."),
+                Err(e) => eprintln!("Replication handshake error: {:?}", e),
+            }
+            println!("Retrying replication in 5 seconds...");
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+    });
+
+    println!("Slave node is running: accepting clients and maintaining replication.");
+
+    // Optionally, you can just await forever here
+    signal::ctrl_c().await?;
+    println!("Slave shutting down after Ctrl-C");
+
+
+
+
+
+///////////////////////////////////////////////////////
+    println!("Gracefully shutting down redis server by {role}!");
     save(rdb.clone()).await?; 
     Ok(())
     

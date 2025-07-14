@@ -22,6 +22,7 @@ pub async fn run_master(
     replica_info: Arc<Mutex<ReplicaInfo>>
 ) -> Result<(), RedisErrors> {
 
+    println!("what!!!");
     let server_info_gaurd = server_info.lock().await;
     let ip_port = format!("{}:{}",server_info_gaurd.listener_info.bind_ipv4(),server_info_gaurd.listener_info.port());
     let listener = TcpListener::bind(ip_port).await?;
@@ -99,12 +100,22 @@ pub async fn run_slave(
     let server_info1 = Arc::clone(&server_info);
     let replica_info1 = Arc::clone(&replica_info);
 
-    
-    // tokio::spawn(async move {
-    let _ = handshake(connections, kv_map, rdb, server_info, replica_info).await?;
-    // });
-    // tokio::spawn(async move {
+    let connections2 = Arc::clone(&connections);
+    let kv_map2 = Arc::clone(&kv_map);
+    let rdb2 = Arc::clone(&rdb);
+    let server_info2 = Arc::clone(&server_info);
+    let replica_info2 = Arc::clone(&replica_info);
+    tokio::spawn(async move {
         let _ = run_master(connections1, kv_map1, rdb1, server_info1, replica_info1).await;
+    });
+    // tokio::spawn(async move {
+    let v = handshake(connections, kv_map, rdb, server_info, replica_info).await;
+    
+    // });
+    println!("After handshake!:{:?}",v);
+    // tokio::spawn(async move {
+    let v = run_master(connections2, kv_map2, rdb2, server_info2, replica_info2).await;
+    println!("Ran run_master again after handshake closed!");
     // }); 
     Ok(())
 }

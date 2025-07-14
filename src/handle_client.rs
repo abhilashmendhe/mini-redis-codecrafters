@@ -16,12 +16,13 @@ pub async fn read_handler(
     replica_info: Arc<Mutex<ReplicaInfo>>
 ) -> Result<(), RedisErrors> {
 
-    println!("Accepted new connection from: {}",sock_addr);
+    
     let mut role = String::new();
     {
         let replica_info_gaurd = replica_info.lock().await;
         role.push_str(&replica_info_gaurd.role());
     }
+    println!("I am {}!. Accepted new connection from: {}", role,sock_addr);
     let mut buffer = [0u8; 1024];
     loop {
         match reader.read(&mut buffer).await {
@@ -69,6 +70,7 @@ pub async fn read_handler(
                         let value = vs.value();
                         let value_len = value.len();
                         let stream_write_fmt = format!("${}\r\n{}\r\n", value_len, value);
+                        println!("stream_write_fmt:{}",stream_write_fmt);
                         if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
                             client_tx.send((sock_addr, stream_write_fmt.as_bytes().to_vec()))?;
                         }
