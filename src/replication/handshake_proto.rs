@@ -22,6 +22,7 @@ pub async fn handshake(
 ) -> Result<(), RedisErrors> {
 
     let recv_bytes_count = Arc::new(Mutex::new(0_usize));
+    let recv_flag         = Arc::new(Mutex::new(false));
     loop {
         {
             // If role is master break.. Master can't perform handshake..
@@ -64,6 +65,7 @@ pub async fn handshake(
                 // Now spawn reader task to listen for master's replication stream
                 let kv_map_clone = Arc::clone(&kv_map);
                 let recv_bytes_count1 = Arc::clone(&recv_bytes_count);
+                let recv_flag1 = Arc::clone(&recv_flag);
                 let reader_task = tokio::spawn(async move {
                     let (mut reader, mut writer) = stream.into_split();
                     let mut buf = [0u8; 1024];
@@ -74,9 +76,16 @@ pub async fn handshake(
                                 break;
                             }
                             Ok(n) => {
-                                // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
                                 {
-                                    *recv_bytes_count1.lock().await += n;
+                                    if *recv_flag1.lock().await {
+                                        println!("No. of bytes: {}", n);
+                                    }
+                                // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
+                                }
+                                {
+                                    if *recv_flag1.lock().await {
+                                        *recv_bytes_count1.lock().await += n;
+                                    }
                                 }
                                 if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
                                     println!("Handshake ->>> Received: {:?}", commands);
@@ -96,12 +105,15 @@ pub async fn handshake(
                                         } else if cmd.get(1).map(|s| s.as_str()) == Some("REPLCONF") {
                                             let _ack = cmd[3].as_str();
                                             let _commands = cmd[5].as_str();
-                                            println!("writing ack to master redis");
                                             let mut recv_byte_counts = 0;
                                             {
-                                                recv_byte_counts = *recv_bytes_count1.lock().await;
+                                                *recv_flag1.lock().await = true;
+                                            }
+                                            {
+                                                recv_byte_counts += *recv_bytes_count1.lock().await;
                                             }
                                             let repl_ack = format!("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n{}\r\n",recv_byte_counts);
+                                            // println!("Writing ack back to master\n:{}",repl_ack);
                                             let _ = writer.write(repl_ack.as_bytes()).await;
                                         }
                                     }

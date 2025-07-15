@@ -6,7 +6,7 @@ use tokio::signal;
 use tokio::sync::{mpsc, Mutex};
 
 // use crate::connection_handling::_periodic_ack_slave;
-use crate::connection_handling::SharedConnectionHashMapT;
+use crate::connection_handling::{SharedConnectionHashMapT, _periodic_ack_slave};
 use crate::errors::RedisErrors;
 use crate::handle_client::{read_handler, write_handler};
 use crate::rdb_persistence::rdb_persist::RDB;
@@ -72,10 +72,13 @@ pub async fn run_master(
                             write_handler(writer, rx, connections2).await
                         });
 
-                        // let connections3 = Arc::clone(&connections);
-                        // tokio::spawn(async move {
-                        //     periodic_ack_slave(connections3, sock_addr).await;
-                        // });
+                        let connections3 = Arc::clone(&connections);
+                        tokio::spawn(async move {
+                            match _periodic_ack_slave(connections3, sock_addr).await {
+                                Ok(_ack) => todo!(),
+                                Err(_err) => println!("{:?}",_err),
+                            };
+                        });
                     },
                     Err(e) => {
                         eprintln!("Accept error: {}", e);
