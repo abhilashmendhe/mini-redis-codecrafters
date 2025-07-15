@@ -32,27 +32,27 @@ pub async fn _periodic_ack_slave(
     sock_addr: SocketAddr
 ) -> Result<(), RedisErrors>{
     println!("Will start periodic ACK to replica from master");
-    // loop {
-    //     tokio::time::sleep(Duration::from_millis(3000)).await;
-    //     // let conns1 = Arc::clone(&conns);
-    //     let conn_gaurd = conns.lock().await;
+    loop {
+        tokio::time::sleep(Duration::from_millis(3000)).await;
+        // let conns1 = Arc::clone(&conns);
+        let conn_gaurd = conns.lock().await;
         
-    //     for (conn_port, (tx, flag)) in conn_gaurd.iter() {
-    //         // println!("key: {}, flag: {}", k, _v.1);
-    //         println!("Replica port: {}. isAlive: {}", conn_port, flag);
-    //         if *flag {
-    //             println!("Sending REPLCONF GETACK to {}", sock_addr);
-    //             tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
+        for (conn_port, (tx, flag)) in conn_gaurd.iter() {
+            // println!("key: {}, flag: {}", k, _v.1);
+            println!("Replica port: {}. isAlive: {}", conn_port, flag);
+            if *flag {
+                println!("Sending REPLCONF GETACK to {}", sock_addr);
+                tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
 
-    //             tokio::time::sleep(Duration::from_millis(2000)).await;
+                tokio::time::sleep(Duration::from_millis(2000)).await;
 
-    //             tx.send((sock_addr, b"*1\r\n$4\r\nPING\r\n".to_vec()))?;
-    //             tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
+                tx.send((sock_addr, b"*1\r\n$4\r\nPING\r\n".to_vec()))?;
+                tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
 
-    //         }
-    //     }
-    //     std::mem::drop(conn_gaurd);
-    //     println!();
-    // }
+            }
+        }
+        std::mem::drop(conn_gaurd);
+        println!();
+    }
     Ok(())
 }

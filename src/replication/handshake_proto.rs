@@ -85,6 +85,7 @@ pub async fn handshake(
                                 {
                                     if *recv_flag1.lock().await {
                                         *recv_bytes_count1.lock().await += n;
+                                        
                                     }
                                 }
                                 if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
@@ -112,8 +113,9 @@ pub async fn handshake(
                                             {
                                                 recv_byte_counts += *recv_bytes_count1.lock().await;
                                             }
-                                            let repl_ack = format!("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n{}\r\n",recv_byte_counts);
-                                            // println!("Writing ack back to master\n:{}",repl_ack);
+                                            let recv_byte_cnt_str = format!("{}", recv_byte_counts);
+                                            let repl_ack = format!("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${}\r\n{}\r\n",recv_byte_cnt_str.len(),recv_byte_counts);
+                                            println!("Writing ack back to master\n:{}",repl_ack);
                                             let _ = writer.write(repl_ack.as_bytes()).await;
                                         }
                                     }

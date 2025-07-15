@@ -72,13 +72,13 @@ pub async fn run_master(
                             write_handler(writer, rx, connections2).await
                         });
 
-                        let connections3 = Arc::clone(&connections);
-                        tokio::spawn(async move {
-                            match _periodic_ack_slave(connections3, sock_addr).await {
-                                Ok(_ack) => todo!(),
-                                Err(_err) => println!("{:?}",_err),
-                            };
-                        });
+                        // let connections3 = Arc::clone(&connections);
+                        // tokio::spawn(async move {
+                        //     match _periodic_ack_slave(connections3, sock_addr).await {
+                        //         Ok(_ack) => todo!(),
+                        //         Err(_err) => println!("{:?}",_err),
+                        //     };
+                        // });
                     },
                     Err(e) => {
                         eprintln!("Accept error: {}", e);
