@@ -65,7 +65,7 @@ pub async fn handshake(
                 // Now spawn reader task to listen for master's replication stream
                 let kv_map_clone = Arc::clone(&kv_map);
                 let reader_task = tokio::spawn(async move {
-                    let (mut reader, _) = stream.into_split();
+                    let (mut reader, mut writer) = stream.into_split();
                     let mut buf = [0u8; 1024];
                     loop {
                         match reader.read(&mut buf).await {
@@ -74,7 +74,7 @@ pub async fn handshake(
                                 break;
                             }
                             Ok(n) => {
-                                println!("{}", String::from_utf8_lossy(&buf[..n]));
+                                // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
                                 if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
                                     println!("Handshake ->>> Received: {:?}", commands);
                                     for cmd in commands {
@@ -90,6 +90,11 @@ pub async fn handshake(
                                                 value_struct.set_pxat(Some(now_ms));
                                             }
                                             insert(key.to_string(), value_struct, kv_map_clone.clone()).await;
+                                        } else if cmd.get(1).map(|s| s.as_str()) == Some("REPLCONF") {
+                                            let ack = cmd[3].as_str();
+                                            let commands = cmd[5].as_str();
+                                            println!("writing ack to master redis");
+                                            let _ = writer.write(b"*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n").await;
                                         }
                                     }
                                 }
@@ -168,7 +173,7 @@ async fn full_handshake(mut stream: TcpStream, server_info: Arc<Mutex<ServerInfo
         println!("Started Final Handshake");
         let _ = stream.write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n".as_bytes()).await?; // write back `PSYNC ?`
         let buf_size = stream.read(&mut buffer).await?; // recv `PSYNC and rdb file content`
-
+        println!("{}", String::from_utf8_lossy(&buffer[..buf_size]));
         Ok(stream)
 }
 

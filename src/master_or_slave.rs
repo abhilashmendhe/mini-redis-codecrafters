@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::{mpsc, Mutex};
 
-use crate::connection_handling::SharedConnectionHashMapT;
+use crate::connection_handling::{periodic_ack_slave, SharedConnectionHashMapT};
 use crate::errors::RedisErrors;
 use crate::handle_client::{read_handler, write_handler};
 use crate::rdb_persistence::rdb_persist::RDB;
@@ -44,6 +44,7 @@ pub async fn run_master(
                         // split the stream
                         let (reader, writer) = stream.into_split();
 
+                        // let writer1 = Arc::new(Mutex::new(&writer));
                         let kv_map1 = Arc::clone(&kv_map);
                         let rdb1 = Arc::clone(&rdb);
                         let server_info1 = Arc::clone(&server_info);
@@ -65,9 +66,15 @@ pub async fn run_master(
 
                         // Spawn thread for writer task
                         let connections2 = Arc::clone(&connections);
+
                         tokio::spawn(async move {
                             write_handler(writer, rx, connections2).await
                         });
+
+                        // let connections3 = Arc::clone(&connections);
+                        // tokio::spawn(async move {
+                        //     periodic_ack_slave(connections3, sock_addr).await;
+                        // });
                     },
                     Err(e) => {
                         eprintln!("Accept error: {}", e);
@@ -83,37 +90,3 @@ pub async fn run_master(
 
     Ok(())
 }
-
-// pub async fn run_slave(
-//     connections: SharedConnectionHashMapT,
-//     kv_map: Arc<Mutex<HashMap<String, ValueStruct>>>,
-//     rdb: Arc<Mutex<RDB>>,
-//     server_info: Arc<Mutex<ServerInfo>>,
-//     replica_info: Arc<Mutex<ReplicaInfo>>
-// ) -> Result<(), RedisErrors> {
-
-//     let connections1 = Arc::clone(&connections);
-//     let kv_map1 = Arc::clone(&kv_map);
-//     let rdb1 = Arc::clone(&rdb);
-//     let server_info1 = Arc::clone(&server_info);
-//     let replica_info1 = Arc::clone(&replica_info);
-
-//     let connections2 = Arc::clone(&connections);
-//     let kv_map2 = Arc::clone(&kv_map);
-//     let rdb2 = Arc::clone(&rdb);
-//     let server_info2 = Arc::clone(&server_info);
-//     let replica_info2 = Arc::clone(&replica_info);
-//     tokio::spawn(async move {
-//         let _ = run_master(connections1, kv_map1, rdb1, server_info1, replica_info1).await;
-//     });
-//     // tokio::spawn(async move {
-//     let v = handshake(connections, kv_map, rdb, server_info, replica_info).await;
-    
-//     // });
-//     println!("After handshake!:{:?}",v);
-//     // tokio::spawn(async move {
-//     let v = run_master(connections2, kv_map2, rdb2, server_info2, replica_info2).await;
-//     println!("Ran run_master again after handshake closed!");
-//     // }); 
-//     Ok(())
-// }

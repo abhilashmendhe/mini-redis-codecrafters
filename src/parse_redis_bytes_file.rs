@@ -53,7 +53,7 @@ pub async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>
     }
 
     let _num_args = String::from_utf8_lossy(&buffer[1..ind]);
-    println!("{}",_num_args);
+    // println!("{}",_num_args);
     ind += 2;
     let mut prev_ind = ind;
     
@@ -66,7 +66,7 @@ pub async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>
                             .parse::<usize>()?;
             let cmd_arg = String::from_utf8_lossy(&buffer[(ind+2)..(ind+2+arg_size)]);
             cmds.push(cmd_arg.to_string());
-            println!("val ->{}", String::from_utf8_lossy(&buffer[(ind+2)..(ind+2+arg_size)]));            
+            // println!("val ->{}", String::from_utf8_lossy(&buffer[(ind+2)..(ind+2+arg_size)]));            
             ind = ind + 2 + arg_size ;
             prev_ind = ind + 2;
         }

@@ -196,6 +196,8 @@ pub async fn read_handler(
                         if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
                             client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
                         }
+                    } else if cmds[1].eq("ACK") {
+                        println!("Received ACK from replica!");
                     }
 
                 } else if cmds[0].eq("PSYNC") {
@@ -220,12 +222,6 @@ pub async fn read_handler(
                         // client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
                         // client_tx.send((sock_addr, header.as_bytes().to_vec()))?;
                         // client_tx.send((sock_addr, contents))?;
-
-
-                        // let mut vv = b"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n123\r\n".to_vec();
-                        // vv.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$3\r\nbar\r\n$3\r\n456\r\n");
-                        // vv.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$3\r\nbaz\r\n$3\r\n789\r\n");
-                        // client_tx.send((sock_addr, vv))?;
                     }
                 
                 }
