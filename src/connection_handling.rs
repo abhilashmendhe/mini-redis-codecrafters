@@ -11,7 +11,7 @@ pub async fn init_connection_channel() -> SharedConnectionHashMapT {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-pub async fn read_connections_simul(conns: SharedConnectionHashMapT) {
+pub async fn _read_connections_simul(conns: SharedConnectionHashMapT) {
     loop {
         tokio::time::sleep(Duration::from_millis(2000)).await;
         // let conns1 = Arc::clone(&conns);

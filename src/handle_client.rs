@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::{SystemTime, U
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
 
-use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::replica_info::ReplicaInfo};
+use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::replica_info::ReplicaInfo};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn read_handler(
@@ -212,9 +212,20 @@ pub async fn read_handler(
 
                     let header = format!("${}\r\n", contents.len());
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
-                        client_tx.send((sock_addr, header.as_bytes().to_vec()))?;
-                        client_tx.send((sock_addr, contents))?;
+                        let mut vv = b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec();
+                        vv.extend_from_slice(header.as_bytes());
+                        vv.extend_from_slice(&contents);
+                        client_tx.send((sock_addr, vv))?;
+
+                        // client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
+                        // client_tx.send((sock_addr, header.as_bytes().to_vec()))?;
+                        // client_tx.send((sock_addr, contents))?;
+
+
+                        // let mut vv = b"*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\n123\r\n".to_vec();
+                        // vv.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$3\r\nbar\r\n$3\r\n456\r\n");
+                        // vv.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$3\r\nbaz\r\n$3\r\n789\r\n");
+                        // client_tx.send((sock_addr, vv))?;
                     }
                 
                 }
@@ -252,38 +263,3 @@ pub async fn write_handler(
         }
     }
 }
-
-pub async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>{
-    
-    // 1. parse the first line that tells how many args were passed
-    let mut ind = 0;
-    while ind < buffer.len() {
-        if buffer[ind] == 13 && buffer[ind + 1] == 10 {
-            break;
-        }
-        ind+=1;
-    }
-
-    let _num_args = String::from_utf8_lossy(&buffer[1..ind]);
-    
-    ind += 2;
-    let mut prev_ind = ind;
-    
-    let mut cmds = vec![];
-
-    // 2. parse the remaining content
-    while ind < buffer.len() - 1 {
-        if buffer[ind] == 13 && buffer[ind + 1] == 10 {
-            let arg_size = String::from_utf8_lossy(&buffer[prev_ind+1..ind])
-                            .parse::<usize>()?;
-            let cmd_arg = String::from_utf8_lossy(&buffer[(ind+2)..(ind+2+arg_size)]);
-            cmds.push(cmd_arg.to_string());
-            // println!("val ->{}", String::from_utf8_lossy(&buffer[(ind+2)..(ind+2+arg_size)]));            
-            ind = ind + 2 + arg_size ;
-            prev_ind = ind + 2;
-        }
-        ind += 1;
-    }
-    Ok(cmds)
-}
-

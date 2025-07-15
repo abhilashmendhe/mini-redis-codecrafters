@@ -18,5 +18,8 @@ pub enum RedisErrors {
     TokioThreadJoinError(#[from] JoinError),
 
     #[error("SendError to channel: {}", 0)]
-    SendErrorToChannel(#[from] SendError<(SocketAddr, Vec<u8>)>)
+    SendErrorToChannel(#[from] SendError<(SocketAddr, Vec<u8>)>),
+
+    #[error("HandshakeInvalidReply: {}", 0)]
+    HandhshakeInvalidReply(String),
 }

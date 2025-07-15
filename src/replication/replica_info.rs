@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{fmt::Display, sync::Arc};
 
 use tokio::sync::Mutex;

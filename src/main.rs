@@ -1,4 +1,5 @@
-// #![allow(unused)]
+#![allow(unused)]
+
 mod errors;
 mod handle_client;
 mod redis_key_value_struct;
@@ -7,126 +8,24 @@ mod redis_server_info;
 mod replication;
 mod connection_handling;
 mod master_or_slave;
+mod parse_redis_bytes_file;
+mod run_node;
 
-use std::{env::args, net::SocketAddr, sync::Arc};
-
-use tokio::{net::TcpListener, signal, sync::mpsc};
-
-use crate::{connection_handling::{init_connection_channel, read_connections_simul}, errors::RedisErrors, handle_client::{read_handler, write_handler}, master_or_slave::{run_master, run_slave}, redis_key_value_struct::{clean_map, init_map}, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::init_replica_info}};
-
-use crate::rdb_persistence::{rdb_persist::{init_rdb, save}, read_rdb::read_rdb_file};
-
+use crate::errors::RedisErrors;
 
 #[tokio::main]
 async fn main() -> Result<(), RedisErrors> {
 
-    // 1. Read args for RDB persistence and check if folder and file(.rdb) exists
-    let args = args().collect::<Vec<String>>();
-
-    let connections = init_connection_channel().await;
-
-    let server_info = init_sever_info(&args).await?;
-
-    let replica_info = init_replica_info(&args).await?;
-
-    let rdb = init_rdb(&args)?;
+    let bytes = [42, 51, 13, 10, 36, 51, 13, 10, 83, 69, 84, 13, 10, 36, 51, 13, 10, 102, 111, 111, 13, 10, 36, 51, 13, 10, 49, 50, 51, 13, 10, 42, 51, 13, 10, 36, 51, 13, 10, 83, 69, 84, 13, 10, 36, 51, 13, 10, 98, 97, 114, 13, 10, 36, 51, 13, 10, 52, 53, 54, 13, 10, 42, 51, 13, 10, 36, 51, 13, 10, 83, 69, 84, 13, 10, 36, 51, 13, 10, 98, 97, 122, 13, 10, 36, 51, 13, 10, 55, 56, 57, 13, 10];
+    // let bytes = b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0".to_vec();
+    // let bytes = b"+Ok\r\n".to_vec();
+    // let bytes = b"*2\r\n$3\r\nget\r\n$3\r\nfoo\r\n*3\r\n$3\r\nset\r\n$3\r\nfoo\r\n$4\r\nbar1\r\n*2\r\n$2\r\nhi\r\n$4\r\nwowo\r\n".to_vec();
+    // ".to_vec();
+    // let cmds = parse_redis_bytes_file::parse_recv_bytes(&bytes).await?;
     
-    let map = init_map();
-
-    let map1 = Arc::clone(&map);
-    match read_rdb_file(rdb.clone(), map1).await {
-        Ok(_) => {},
-        Err(_e) => {
-            save(rdb.clone()).await?;
-        },
-    }
-
-    // // Read keys and values periodically to check if client is inserted on not
-    // // The below function call is temporary. Should not run on prod servers.
-    // let connections1 = Arc::clone(&connections);
-    // tokio::spawn(async move {
-    //     read_connections_simul(connections1).await;
-    // });
-
-    // Regular clean-up of keys in redis
-    let map2 = Arc::clone(&map);
-    tokio::spawn(async move {
-        let _ = clean_map(map2).await;
-    });
-
-    
-    
-    let replica_info1 = Arc::clone(&replica_info);
-    let replica_info_gaurd = replica_info1.lock().await;
-    let rdb1 = Arc::clone(&rdb);
-    let role = replica_info_gaurd.role();
-    std::mem::drop(replica_info_gaurd);
-
-    // if role.eq("master") {
-    //     println!("Call master code async.");
-    //     run_master(connections, map, rdb1, server_info, replica_info).await?;
-    // } else {
-    //     println!("Call slave code async.");
-    //     run_slave(connections, map, rdb1, server_info, replica_info).await?;
-    // }
-
-
-///////////////////////////////////////////////////
- // spawn the local server listener that handles normal clients
-    let connections1 = Arc::clone(&connections);
-    let kv_map1 = Arc::clone(&map);
-    let rdb1 = Arc::clone(&rdb);
-    let server_info1 = Arc::clone(&server_info);
-    let replica_info1 = Arc::clone(&replica_info);
-    tokio::spawn(async move {
-        let _ = run_master(connections1, kv_map1, rdb1, server_info1, replica_info1).await;
-    });
-
-    // spawn the replication loop
-    let connections2 = Arc::clone(&connections);
-    let kv_map2 = Arc::clone(&map);
-    let rdb2 = Arc::clone(&rdb);
-    let server_info2 = Arc::clone(&server_info);
-    let replica_info2 = Arc::clone(&replica_info);
-    tokio::spawn(async move {
-        loop {
-            {
-                let role_guard = replica_info2.lock().await;
-                if role_guard.role() != "slave" {
-                    println!("Not a slave anymore. Stopping replication loop.");
-                    break;
-                }
-            }
-            println!("Starting handshake to master...");
-            let result = handshake(
-                connections2.clone(),
-                kv_map2.clone(),
-                rdb2.clone(),
-                server_info2.clone(),
-                replica_info2.clone()
-            ).await;
-            match result {
-                Ok(_) => println!("Handshake finished (maybe master disconnected). Retrying soon."),
-                Err(e) => eprintln!("Replication handshake error: {:?}", e),
-            }
-            println!("Retrying replication in 5 seconds...");
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        }
-    });
-
-    println!("Slave node is running: accepting clients and maintaining replication.");
-
-    // Optionally, you can just await forever here
-    signal::ctrl_c().await?;
-    println!("Slave shutting down after Ctrl-C");
-
-
-
-
-
-///////////////////////////////////////////////////////
-    println!("Gracefully shutting down redis server by {role}!");
-    save(rdb.clone()).await?; 
+    // println!("{:?}", cmds);
+    run_node::run_redis_node().await?;
+    // let multi_cmds = parse_redis_bytes_file::parse_multi_commands(&bytes).await;
+    // println!("{:#?}",multi_cmds);
     Ok(())
-    
 }
