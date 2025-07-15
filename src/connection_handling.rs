@@ -54,5 +54,5 @@ pub async fn _periodic_ack_slave(
         std::mem::drop(conn_gaurd);
         println!();
     }
-    Ok(())
+    // Ok(())
 }

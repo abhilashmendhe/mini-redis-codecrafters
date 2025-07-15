@@ -217,6 +217,7 @@ pub async fn read_handler(
                         let mut vv = b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec();
                         vv.extend_from_slice(header.as_bytes());
                         vv.extend_from_slice(&contents);
+                        // vv.extend_from_slice(b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
                         client_tx.send((sock_addr, vv))?;
 
                         // client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
