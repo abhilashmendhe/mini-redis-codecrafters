@@ -5,7 +5,7 @@ use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex};
 use crate::{
     connection_handling::SharedConnectionHashMapT, 
     errors::RedisErrors, 
-    parse_redis_bytes_file::{parse_multi_commands, parse_recv_bytes}, 
+    parse_redis_bytes_file::parse_multi_commands, 
     rdb_persistence::rdb_persist::RDB, 
     redis_key_value_struct::{insert, ValueStruct}, 
     redis_server_info::ServerInfo, 
@@ -20,6 +20,8 @@ pub async fn handshake(
     server_info: Arc<Mutex<ServerInfo>>, 
     replica_info: Arc<Mutex<ReplicaInfo>>
 ) -> Result<(), RedisErrors> {
+
+    let recv_bytes_count = Arc::new(Mutex::new(0_usize));
     loop {
         {
             // If role is master break.. Master can't perform handshake..
@@ -51,11 +53,8 @@ pub async fn handshake(
         let master_addr = format!("{}:{}", master_host, master_port);
         println!("Handshake ->>> Trying to connect to master at {}", master_addr);
 
-        let mut buffer = [0 as u8; 1024];
-        let mut stream = TcpStream::connect(&master_addr).await?;
-
+        let stream = TcpStream::connect(&master_addr).await?;
         
-
         // Try to connect and do handshake
         let server_info1 = Arc::clone(&server_info);
         match full_handshake(stream, server_info1).await {
@@ -64,6 +63,7 @@ pub async fn handshake(
 
                 // Now spawn reader task to listen for master's replication stream
                 let kv_map_clone = Arc::clone(&kv_map);
+                let recv_bytes_count1 = Arc::clone(&recv_bytes_count);
                 let reader_task = tokio::spawn(async move {
                     let (mut reader, mut writer) = stream.into_split();
                     let mut buf = [0u8; 1024];
@@ -75,6 +75,9 @@ pub async fn handshake(
                             }
                             Ok(n) => {
                                 // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
+                                {
+                                    *recv_bytes_count1.lock().await += n;
+                                }
                                 if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
                                     println!("Handshake ->>> Received: {:?}", commands);
                                     for cmd in commands {
@@ -91,10 +94,15 @@ pub async fn handshake(
                                             }
                                             insert(key.to_string(), value_struct, kv_map_clone.clone()).await;
                                         } else if cmd.get(1).map(|s| s.as_str()) == Some("REPLCONF") {
-                                            let ack = cmd[3].as_str();
-                                            let commands = cmd[5].as_str();
+                                            let _ack = cmd[3].as_str();
+                                            let _commands = cmd[5].as_str();
                                             println!("writing ack to master redis");
-                                            let _ = writer.write(b"*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n").await;
+                                            let mut recv_byte_counts = 0;
+                                            {
+                                                recv_byte_counts = *recv_bytes_count1.lock().await;
+                                            }
+                                            let repl_ack = format!("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n{}\r\n",recv_byte_counts);
+                                            let _ = writer.write(repl_ack.as_bytes()).await;
                                         }
                                     }
                                 }
@@ -175,81 +183,4 @@ async fn full_handshake(mut stream: TcpStream, server_info: Arc<Mutex<ServerInfo
         let buf_size = stream.read(&mut buffer).await?; // recv `PSYNC and rdb file content`
         println!("{}", String::from_utf8_lossy(&buffer[..buf_size]));
         Ok(stream)
-}
-
-async fn first_handshake(server_info: Arc<Mutex<ServerInfo>>, master_addr: &str) -> Result<TcpStream, RedisErrors> {
-    let mut stream = TcpStream::connect(&master_addr).await?;
-        
-    let _ = stream.write_all("*1\r\n$4\r\nPING\r\n".as_bytes()).await?;
-    // let _ = stream.flush().await;
-    // read the incoming message from master server
-    let mut buf = [0 as u8; 1024];
-    let len = stream.read(&mut buf).await?;
-    let message = String::from_utf8_lossy(&buf[..len]);
-    println!("First handshake Received: {}", message);
-    if message.eq("+PONG\r\n") {
-        // second_handshake(_slave_replica_info, master_addr).await?;
-        second_handshake(server_info, &mut stream).await?;
-    }
-
-    Ok(stream)
-}
-
-async fn second_handshake(server_info: Arc<Mutex<ServerInfo>>, stream: &mut TcpStream) -> Result<(), RedisErrors> {
-    // let s = format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n",);
-    let mut s = String::new();
-    {
-        let rep_info_gaurd = server_info.lock().await;
-        let form = format!("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{}\r\n", rep_info_gaurd.tcp_port);
-        s.push_str(&form);
-        
-    }
-    let _ = stream.write(s.as_bytes()).await?;
-
-    // let _ = stream.write("*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6380\r\n".as_bytes()).await?;
-    // let _ = stream.flush().await;
-    // read the incoming message from master server
-    let mut buf = [0 as u8; 1024];
-    let len = stream.read(&mut buf).await?;
-    let message = String::from_utf8_lossy(&buf[..len]);
-    println!("Second handshake Received: {}", message);
-    if message.eq("+OK\r\n") {
-        third_handshake(server_info, stream).await?;
-    }
-    Ok(())
-}
-
-async fn third_handshake(server_info: Arc<Mutex<ServerInfo>>, stream: &mut TcpStream) -> Result<(), RedisErrors> {
-    
-    let _ = stream.write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n".as_bytes()).await?;
-    // let _ = stream.flush().await;
-    // read the incoming message from master server
-    let mut buf = [0 as u8; 1024];
-    let len = stream.read(&mut buf).await?;
-    let message = String::from_utf8_lossy(&buf[..len]);
-    println!("Third handshake Received: {}", message);
-    if message.eq("+OK\r\n") {
-        final_handshake(server_info, stream).await?;
-    }
-    Ok(())
-}
-
-async fn final_handshake(_server_info: Arc<Mutex<ServerInfo>>, stream: &mut TcpStream) -> Result<(), RedisErrors> {
-    
-    let _ = stream.write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n".as_bytes()).await?;
-    // let _ = stream.flush().await;
-    // read the incoming message from master server
-    let mut buf = [0 as u8; 1024];
-    let len = stream.read(&mut buf).await?;
-    let message = String::from_utf8_lossy(&buf[..len]);
-    println!("Final handshake Received: {}", message);
-    
-    // get multi-commands
-    let mut buf = [0 as u8; 1024];
-    let len = stream.read(&mut buf).await?;
-    let message = String::from_utf8_lossy(&buf[..len]);
-    println!("{:?}",&buf[..len]);
-    println!("After final handshake -> Got the file content: {}", message);
-    // println!("parbytes: {:?}",parse_recv_bytes(&mut buf).await);
-    Ok(())
 }
