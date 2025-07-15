@@ -227,7 +227,9 @@ pub async fn read_handler(
                 
                 } else if cmds[0].eq("WAIT") {
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        client_tx.send((sock_addr,b":0\r\n".to_vec()))?;
+                        let connected_slaves = {replica_info.lock().await.connected_slaves()};
+                        let form = format!(":{}\r\n", connected_slaves);
+                        client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
                     }
                 }
 
