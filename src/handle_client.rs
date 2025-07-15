@@ -225,6 +225,10 @@ pub async fn read_handler(
                         // client_tx.send((sock_addr, contents))?;
                     }
                 
+                } else if cmds[0].eq("WAIT") {
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr,b":0\r\n".to_vec()))?;
+                    }
                 }
 
             },

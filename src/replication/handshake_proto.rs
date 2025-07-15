@@ -74,106 +74,55 @@ pub async fn handshake(
             recv_bytes_count1,
             recv_flag1
         ).await?;
-        // match full_handshake(reader1, writer1, server_info1).await {
-        //     Ok(_) => {
-                println!("Handshake ->>> Connected and handshake complete");
-                
-                // Now spawn reader task to listen for master's replication stream
-                // let kv_map1 = Arc::clone(&kv_map);                
-                // let recv_bytes_count1 = Arc::clone(&recv_bytes_count);
-                // let recv_flag1 = Arc::clone(&recv_flag);
-                let kv_map1 = Arc::clone(&kv_map);
-                let recv_bytes_count1= Arc::clone(&recv_bytes_count);
-                let recv_flag1 = Arc::clone(&recv_flag);
-                let reader_task = tokio::spawn(async move {
-                    let mut buf = [0u8; 1024];
-                    let reader2 = Arc::clone(&reader);
-                    let kv_map1 = Arc::clone(&kv_map1);
-                    loop {
-                        let writer2 = Arc::clone(&writer);
-                        let kv_map2 = Arc::clone(&kv_map1);
-                        let recv_bytes_count2 = Arc::clone(&recv_bytes_count1);
-                        let recv_flag2 = Arc::clone(&recv_flag1);
-                        match reader2.lock().await.read(&mut buf).await {
-                            Ok(0) => {
-                                println!("Handshake ->>> Master closed connection");
-                                break;
-                            },
-                            Ok(n) => {
-                                {      
-                                if *recv_flag2.lock().await {
-                                    println!("No. of bytes: {}", n);
-                                    *recv_bytes_count2.lock().await += n;
-                                }
-                                    // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
-                                }
-                                if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
-                                    println!("Handshake ->>> Received: {:?}", commands);
-                                        
-                                        master_reader_handle(
-                                            commands, 
-                                            writer2, 
-                                            kv_map2, 
-                                            recv_bytes_count2, 
-                                            recv_flag2
-                                        ).await;
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("Handshake ->>> Error reading from master: {}", e);
-                                break;
-                            },
-                        }
+        
+        println!("Handshake ->>> Connected and handshake complete");
+        let kv_map1 = Arc::clone(&kv_map);
+        let recv_bytes_count1= Arc::clone(&recv_bytes_count);
+        let recv_flag1 = Arc::clone(&recv_flag);
+        let reader_task = tokio::spawn(async move {
+        let mut buf = [0u8; 1024];
+        let reader2 = Arc::clone(&reader);
+        let kv_map1 = Arc::clone(&kv_map1);
+        loop {
+            let writer2 = Arc::clone(&writer);
+            let kv_map2 = Arc::clone(&kv_map1);
+            let recv_bytes_count2 = Arc::clone(&recv_bytes_count1);
+            let recv_flag2 = Arc::clone(&recv_flag1);
+            match reader2.lock().await.read(&mut buf).await {
+                Ok(0) => {
+                    println!("Handshake ->>> Master closed connection");
+                    break;
+                },
+                Ok(n) => {
+                    {      
+                    if *recv_flag2.lock().await {
+                        println!("No. of bytes: {}", n);
+                        *recv_bytes_count2.lock().await += n;
                     }
-                });
-                reader_task.await.ok();
-                // let reader_task = tokio::spawn(async move {
-                //     let (mut reader, mut writer) = stream.split();
-                //     let mut buf = [0u8; 1024];
-                //     loop {
-                //         match reader.read(&mut buf).await {
-                //             Ok(0) => {
-                //                 println!("Handshake ->>> Master closed connection");
-                //                 break;
-                //             }
-                //             Ok(n) => {
-                //                 {      
-                //                     if *recv_flag1.lock().await {
-                //                         println!("No. of bytes: {}", n);
-                //                         *recv_bytes_count1.lock().await += n;
-                //                     }
-                //                     // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
-                //                 }
-                //                 if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
-                //                     println!("Handshake ->>> Received: {:?}", commands);
-                                        
-                //                         // master_reader_handle(
-                //                         //     commands, 
-                //                         //     writer, 
-                //                         //     kv_map1, 
-                //                         //     recv_bytes_count2, 
-                //                         //     recv_flag2
-                //                         // ).await;
-                //                 }
-                //             }
-                //             Err(e) => {
-                //                 eprintln!("Handshake ->>> Error reading from master: {}", e);
-                //                 break;
-                //             }
-                //         }
-                //     }
-                // });
+                        // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
+                    }
+                    if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
+                        println!("Handshake ->>> Received: {:?}", commands);
+                            
+                            master_reader_handle(
+                                commands, 
+                                writer2, 
+                                kv_map2, 
+                                recv_bytes_count2, 
+                                recv_flag2
+                            ).await;
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Handshake ->>> Error reading from master: {}", e);
+                    break;
+                },
+            }
+        }
+    });
+    reader_task.await.ok();
 
-                // Wait for reader_task to finish (i.e. until master connection closes)
-                // reader_task.await.ok();
-                println!("Handshake ->>> Connection to master lost, will retry");
-        //     }
-        //     Err(e) => {
-        //         eprintln!("Handshake ->>> Handshake error: {}", e);
-        //     }
-        // }
-
-        // Wait before retrying
+        println!("Handshake ->>> Connection to master lost, will retry");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 
