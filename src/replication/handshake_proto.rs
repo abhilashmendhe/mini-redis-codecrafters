@@ -194,7 +194,7 @@ async fn full_handshake(mut stream: TcpStream, server_info: Arc<Mutex<ServerInfo
         // 4th(final) handshake
         println!("Started Final Handshake");
         let _ = stream.write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n".as_bytes()).await?; // write back `PSYNC ?`
-        let _buf_size = stream.read(&mut buffer).await?; // recv `PSYNC and rdb file content`
+        let buf_size = stream.read(&mut buffer).await?; // recv `PSYNC and rdb file content`
         println!("{}\n", String::from_utf8_lossy(&buffer[..buf_size]));
         println!();
         Ok(stream)
