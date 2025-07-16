@@ -108,12 +108,12 @@ pub async fn handshake(
                                 writer2, 
                                 kv_map2, 
                                 recv_bytes_count2,
-                                n,
+                                // n,
                             ).await;
                     }
-                    {
-                        *recv_bytes_count3.lock().await += n;
-                    }
+                    // {
+                    //     *recv_bytes_count3.lock().await += n;
+                    // }
                 },
                 Err(e) => {
                     eprintln!("Handshake ->>> Error reading from master: {}", e);
@@ -222,7 +222,7 @@ async fn full_handshake(
         writer, 
         kv_map, 
         recv_bytes_count, 
-        0
+        // 0
     ).await;
     Ok(())
 }
