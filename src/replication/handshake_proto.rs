@@ -99,10 +99,10 @@ pub async fn handshake(
                 },
                 Ok(n) => {
                     {
-                        let port = server_info2.lock().await.tcp_port;
-                        if port > 6380 {
-                            tokio::time::sleep(std::time::Duration::from_millis(6000)).await;
-                        }
+                        // let port = server_info2.lock().await.tcp_port;
+                        // if port > 6381 {
+                        //     tokio::time::sleep(std::time::Duration::from_millis(6000)).await;
+                        // }
                     }
                     if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
                         println!("Handshake ->>> Received: {:?}", commands);

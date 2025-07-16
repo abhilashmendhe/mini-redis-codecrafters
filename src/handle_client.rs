@@ -214,7 +214,9 @@ pub async fn read_handler(
                         // Increase reply count
                         {
                             *slave_ack_count.lock().await += 1;
-                            notify.notify_waiters();
+                            if *slave_ack_count.lock().await >= slave_ack_set.lock().await.len() {
+                                notify.notify_waiters();
+                            }
                         }
                         // {
                         //     println!("{}",*slave_ack_count.lock().await);
