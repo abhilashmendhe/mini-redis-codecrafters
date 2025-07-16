@@ -14,3 +14,4 @@ dumps/
 dump.rdb
 script*
 src/replication_tmp
+codecrafter_out_multi_cmds.txt

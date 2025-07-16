@@ -14,7 +14,7 @@ pub async fn master_reader_handle(
 ) {
     // let mut tbyte_count = 0;
     for (_ind, cmd) in commands.iter().enumerate() {
-        println!("In master_reader_handle - {:?}", cmd);
+        // println!("In master_reader_handle - {:?}", cmd);
         if cmd[1].ne("REPLCONF") {
             let total_len = format!("*{}",cmd.len()/2 + 2);
             let mut tbyte_count = total_len.len() + 2;

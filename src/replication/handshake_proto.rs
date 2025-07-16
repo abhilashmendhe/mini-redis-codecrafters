@@ -22,7 +22,8 @@ pub async fn handshake(
 ) -> Result<(), RedisErrors> {
 
     let recv_bytes_count = Arc::new(Mutex::new(0_usize));
-    let recv_bytes_flag = Arc::new(Mutex::new(false));
+    // let recv_bytes_flag = Arc::new(Mutex::new(false));
+    let server_info1 = Arc::clone(&server_info);
     loop {
         {
             // If role is master break.. Master can't perform handshake..
@@ -60,14 +61,14 @@ pub async fn handshake(
         let writer = Arc::new(Mutex::new(writer));
 
         // Try to connect and do handshake
-        let server_info1 = Arc::clone(&server_info);
+        let server_info1 = Arc::clone(&server_info1);
         // let server_info2 = Arc::clone(&server_info);
         let reader1 = Arc::clone(&reader);
         let writer1 = Arc::clone(&writer);
         let kv_map1 = Arc::clone(&kv_map);
         let recv_bytes_count1 = Arc::clone(&recv_bytes_count);
-        let recv_bytes_flag1 = Arc::clone(&recv_bytes_flag);
-        let recv_bytes_count3 = Arc::clone(&recv_bytes_count);
+        // let recv_bytes_flag1 = Arc::clone(&recv_bytes_flag);
+        // let recv_bytes_count3 = Arc::clone(&recv_bytes_count);
         full_handshake(
             reader1, 
             writer1, 
@@ -79,15 +80,18 @@ pub async fn handshake(
         println!("Handshake ->>> Connected and handshake complete");
         let kv_map1 = Arc::clone(&kv_map);
         let recv_bytes_count1= Arc::clone(&recv_bytes_count);
+        let server_info2 = Arc::clone(&server_info);
         let reader_task = tokio::spawn(async move {
         let mut buf = [0u8; 1024];
         let reader2 = Arc::clone(&reader);
         let kv_map1 = Arc::clone(&kv_map1);
+
         loop {
             let writer2 = Arc::clone(&writer);
             let kv_map2 = Arc::clone(&kv_map1);
             let recv_bytes_count2 = Arc::clone(&recv_bytes_count1);
-            let recv_bytes_flag2 = Arc::clone(&recv_bytes_flag1);
+            // let recv_bytes_flag2 = Arc::clone(&recv_bytes_flag1);
+            
             match reader2.lock().await.read(&mut buf).await {
                 Ok(0) => {
                     println!("Handshake ->>> Master closed connection");
@@ -97,7 +101,7 @@ pub async fn handshake(
                     // {
                     //     let port = server_info2.lock().await.tcp_port;
                     //     if port > 6380 {
-                    //         tokio::time::sleep(std::time::Duration::from_millis(5000)).await;
+                    //         tokio::time::sleep(std::time::Duration::from_millis(6000)).await;
                     //     }
                     // }
                     if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {

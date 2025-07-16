@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::{mpsc, Mutex};
@@ -29,6 +29,8 @@ pub async fn run_master(
 
     let slave_ack_set: Arc<Mutex<HashSet<u16>>> = Arc::new(Mutex::new(HashSet::new()));
     let command_init_for_slave = Arc::new(Mutex::new(false));
+    let store_commands: Arc<Mutex<VecDeque<Vec<u8>>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let slave_ack_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -54,7 +56,9 @@ pub async fn run_master(
                         let replica_info1 = Arc::clone(&replica_info);
                         let connections1 = Arc::clone(&connections);
                         let slave_ack_set1 = Arc::clone(&slave_ack_set);
+                        let slave_ack_count1 = Arc::clone(&slave_ack_count);
                         let command_init_for_replica1 = Arc::clone(&command_init_for_slave);
+                        let store_commands1 = Arc::clone(&store_commands);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
                             read_handler(
@@ -66,7 +70,9 @@ pub async fn run_master(
                                 server_info1, 
                                 replica_info1,
                                 slave_ack_set1,
-                                command_init_for_replica1
+                                slave_ack_count1,
+                                command_init_for_replica1,
+                                store_commands1
                             ).await
                         });
 

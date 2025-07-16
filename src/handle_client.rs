@@ -1,9 +1,9 @@
 
-use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
 
-use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::replica_info::ReplicaInfo};
+use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn read_handler(
@@ -15,7 +15,9 @@ pub async fn read_handler(
     server_info: Arc<Mutex<ServerInfo>>,
     replica_info: Arc<Mutex<ReplicaInfo>>,
     slave_ack_set: Arc<Mutex<HashSet<u16>>>,
-    command_init_for_replica: Arc<Mutex<bool>>
+    slave_ack_count: Arc<Mutex<usize>>,
+    command_init_for_replica: Arc<Mutex<bool>>,
+    store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>
 ) -> Result<(), RedisErrors> {
 
     
@@ -26,8 +28,7 @@ pub async fn read_handler(
     }
     println!("I am {}!. Accepted new connection from: {}", role,sock_addr);
     let mut buffer = [0u8; 1024];
-    // let count_slave_ack = 0;
-    // let mut slave_ack_set = HashSet::new();
+   
     loop {
         match reader.read(&mut buffer).await {
             Ok(0) => {
@@ -114,19 +115,15 @@ pub async fn read_handler(
                     {
                         *command_init_for_replica.lock().await = true;
                     }
-
-                    {
-                        let mut conn_gaurd = connections.lock().await;
-                        for (_k, (_tx, _flag)) in conn_gaurd.iter_mut() {
-                            
-                            if *_flag {
-                                println!("key: {}, flag: {}", _k, _flag);
-                                _tx.send((sock_addr, buffer[..n].to_vec()))?;
-                                // vv.extend_from_slice(b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
-                                _tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
-                            } 
-                        }
+                    let slave_count = {
+                        println!("Replicas Set: {:?}",slave_ack_set.lock().await);
+                        slave_ack_set.lock().await.len()
+                    };
+                    if slave_count > 0 {
+                        // Don't propagate the commands, store commands(Vec<u8>) in a vector or queue..
+                        store_commands.lock().await.push_back(buffer[..n].to_vec());
                     }
+                
         
                 } else if cmds[0] == String::from("CONFIG") {
                     if cmds[1] == String::from("GET") {
@@ -212,13 +209,15 @@ pub async fn read_handler(
                     } else if cmds[1].eq("ACK") {
                         println!("Received ACK from replica!");
                         println!("Store reply here...");
+                        
+                        // Increase reply count
                         {
-                            let mut slave_ack_set_gaurd = slave_ack_set.lock().await;
-                            slave_ack_set_gaurd.insert(sock_addr.port());
-                            println!("{:?}", slave_ack_set_gaurd);
+                            *slave_ack_count.lock().await += 1;
                         }
-                        // slave_ack_set.insert(sock_addr.port());
-                        // println!("{:?}",slave_ack_set);
+                        // {
+                        //     println!("{}",*slave_ack_count.lock().await);
+                        // }
+
                     }
 
                 } else if cmds[0].eq("PSYNC") {
@@ -243,22 +242,51 @@ pub async fn read_handler(
                         // ##############################
                         client_tx.send((sock_addr, vv))?;
                     }
+                    {
+                        let mut slave_ack_set_gaurd = slave_ack_set.lock().await;
+                        slave_ack_set_gaurd.insert(sock_addr.port());
+                        println!("{:?}", slave_ack_set_gaurd);
+                    }
                 
                 } else if cmds[0].eq("WAIT") {
+                    
+                    
                     let conn_slaves = {
                         replica_info.lock().await.connected_slaves()
                     };
-                    // let expected_replica_reply = cmds[1].parse::<u16>()?;
                     if conn_slaves > 0 {
+                        // Propagate commands
+                        {
+                            let mut store_commands_gaurd = store_commands.lock().await;
+                            while let Some(buffer) = store_commands_gaurd.pop_front() {
+                                let connections1 = Arc::clone(&connections);
+                                propagate_master_commands(
+                                    sock_addr, 
+                                    connections1, 
+                                    buffer
+                                ).await?;
+                            }
+                            
+                        }
+                        // Propagate "REPLCONF GETACK *" to replicas                   
+                        let connections1 = Arc::clone(&connections);
+                        propagate_replconf_getack(sock_addr, connections1).await?;
+                        // Sleep for the desired amount of time...
                         let timeout_millis = cmds[2].parse::<u64>()?;
                         tokio::time::sleep(std::time::Duration::from_millis(timeout_millis)).await;
                     }
-                    let reply_ack_slave_count = {
-                        let slave_ack_set_gaurd = slave_ack_set.lock().await;
-                        println!("{:?}", slave_ack_set_gaurd);
-                        slave_ack_set_gaurd.len()
-                    };
+                    println!("\nDone sleeping for WAIT!");
+
+                    // // Propagate "REPLCONF GETACK *" to replicas                   
+                    // let connections1 = Arc::clone(&connections);
+                    // propagate_replconf_getack(sock_addr, connections1).await?;
                     
+                    let reply_ack_slave_count = {
+                        while *slave_ack_count.lock().await <= 0 {}
+                        println!("what");
+                        *slave_ack_count.lock().await
+                    };
+                    println!("Reply slave count: {}",reply_ack_slave_count);
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
                         let connected_slaves = {
                             if *command_init_for_replica.lock().await {
@@ -267,11 +295,11 @@ pub async fn read_handler(
                                 conn_slaves as usize
                             }
                         };
-                        // let connected_slaves = reply_ack_slave_count;
-
+                        
                         let form = format!(":{}\r\n", connected_slaves);
                         client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
                     }
+                    {   *slave_ack_count.lock().await = 0;   }
                 }
 
             },
@@ -292,10 +320,10 @@ pub async fn write_handler(
     // println!("Write handler!");
     while let Some(recv_bytes) = rx.recv().await {
         let (_sock_addr, reply_bytes) = recv_bytes; 
-        println!("In write_handler - {}",_sock_addr);
+        // println!("In write_handler - {}",_sock_addr);
         match writer.write_all(&reply_bytes).await {
             Ok(_) => {
-                println!("Writing data back to client: {}", _sock_addr);
+                // println!("Writing data back to client: {}", _sock_addr);
             },
             Err(e) => {
                 println!("Error in write_handler: {e}");
