@@ -125,6 +125,19 @@ pub async fn read_handler(
                         // Don't propagate the commands, store commands(Vec<u8>) in a vector or queue..
                         store_commands.lock().await.push_back(buffer[..n].to_vec());
                         // println!("{:?}", store_commands.lock().await);
+                        let mut store_commands_gaurd = store_commands.lock().await;
+                        let vecdeque_len = store_commands_gaurd.len();
+                        // println!("vecdeque_len: {}", vecdeque_len);
+                        if vecdeque_len >= 3 {
+                            while let Some(buffer) = store_commands_gaurd.pop_front() {
+                                let connections1 = Arc::clone(&connections);
+                                propagate_master_commands(
+                                    sock_addr, 
+                                    connections1, 
+                                    buffer
+                                ).await?;
+                            }
+                        }
                     }
                 
         
