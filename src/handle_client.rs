@@ -120,9 +120,11 @@ pub async fn read_handler(
                         println!("Replicas Set: {:?}",slave_ack_set.lock().await);
                         slave_ack_set.lock().await.len()
                     };
+                    println!("Slave count: {}", slave_count);
                     if slave_count > 0 {
                         // Don't propagate the commands, store commands(Vec<u8>) in a vector or queue..
                         store_commands.lock().await.push_back(buffer[..n].to_vec());
+                        // println!("{:?}", store_commands.lock().await);
                     }
                 
         
@@ -260,6 +262,7 @@ pub async fn read_handler(
                         let vecduque_len = {
                             let mut store_commands_gaurd = store_commands.lock().await;
                             let vecdeque_len = store_commands_gaurd.len();
+                            println!("vecdeque_len: {}", vecdeque_len);
                             while let Some(buffer) = store_commands_gaurd.pop_front() {
                                 let connections1 = Arc::clone(&connections);
                                 propagate_master_commands(
