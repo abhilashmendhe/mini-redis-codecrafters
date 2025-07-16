@@ -1,7 +1,7 @@
 
 use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify}};
 
 use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 use crate::rdb_persistence::rdb_persist::RDB;
@@ -16,6 +16,7 @@ pub async fn read_handler(
     replica_info: Arc<Mutex<ReplicaInfo>>,
     slave_ack_set: Arc<Mutex<HashSet<u16>>>,
     slave_ack_count: Arc<Mutex<usize>>,
+    notify: Arc<Notify>,    
     command_init_for_replica: Arc<Mutex<bool>>,
     store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>
 ) -> Result<(), RedisErrors> {
@@ -213,6 +214,7 @@ pub async fn read_handler(
                         // Increase reply count
                         {
                             *slave_ack_count.lock().await += 1;
+                            notify.notify_waiters();
                         }
                         // {
                         //     println!("{}",*slave_ack_count.lock().await);
@@ -273,7 +275,33 @@ pub async fn read_handler(
                         propagate_replconf_getack(sock_addr, connections1).await?;
                         // Sleep for the desired amount of time...
                         let timeout_millis = cmds[2].parse::<u64>()?;
-                        tokio::time::sleep(std::time::Duration::from_millis(timeout_millis)).await;
+                        
+                        let t1 = tokio::spawn(
+                        tokio::time::sleep(std::time::Duration::from_millis(timeout_millis))
+                        );
+                        let t2 = tokio::spawn({
+                            let count = slave_ack_count.clone();
+                            let notify = notify.clone();
+                            async move {
+                                loop {
+                                    {
+                                        let val = *count.lock().await;
+                                        if val > 0 {
+                                            return val;
+                                        }
+                                    }
+                                    notify.notified().await;
+                                }
+                            }
+                        });
+                        tokio::select! {
+                            _ = t1 => {
+                                println!("Timeout occurred first!");
+                            }
+                            res = t2 => {
+                                println!("Ack count detected: {}", res.unwrap());
+                            }
+                        }
                     }
                     println!("\nDone sleeping for WAIT!");
 

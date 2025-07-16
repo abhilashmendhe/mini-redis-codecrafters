@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::net::TcpListener;
 use tokio::signal;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
 
 // use crate::connection_handling::_periodic_ack_slave;
 use crate::connection_handling::{SharedConnectionHashMapT, _periodic_ack_slave};
@@ -31,6 +31,7 @@ pub async fn run_master(
     let command_init_for_slave = Arc::new(Mutex::new(false));
     let store_commands: Arc<Mutex<VecDeque<Vec<u8>>>> = Arc::new(Mutex::new(VecDeque::new()));
     let slave_ack_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+    let notify = Arc::new(Notify::new());
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -57,6 +58,7 @@ pub async fn run_master(
                         let connections1 = Arc::clone(&connections);
                         let slave_ack_set1 = Arc::clone(&slave_ack_set);
                         let slave_ack_count1 = Arc::clone(&slave_ack_count);
+                        let notify1 = Arc::clone(&notify);
                         let command_init_for_replica1 = Arc::clone(&command_init_for_slave);
                         let store_commands1 = Arc::clone(&store_commands);
                         // Spawn thread for reader task
@@ -71,6 +73,7 @@ pub async fn run_master(
                                 replica_info1,
                                 slave_ack_set1,
                                 slave_ack_count1,
+                                notify1,
                                 command_init_for_replica1,
                                 store_commands1
                             ).await
