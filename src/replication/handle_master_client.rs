@@ -9,10 +9,14 @@ pub async fn master_reader_handle(
     writer: Arc<Mutex<OwnedWriteHalf>>,
     kv_map: SharedMapT,
     recv_bytes_count: Arc<Mutex<usize>>,
+    // recv_bytes_flag: Arc<Mutex<bool>>
+    no_bytes: usize
 ) {
     
-    for cmd in commands {
-        // println!("In master_reader_handle - {:?}", cmd);
+    
+    for (_ind, cmd) in commands.iter().enumerate() {
+        println!("In master_reader_handle - {:?}", cmd);
+       
         if cmd.get(1).map(|s| s.as_str()) == Some("SET") {
             let key = cmd[3].as_str();
             let value = cmd[5].as_str();
