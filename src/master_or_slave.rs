@@ -28,6 +28,7 @@ pub async fn run_master(
     std::mem::drop(server_info_gaurd);
 
     let slave_ack_set: Arc<Mutex<HashSet<u16>>> = Arc::new(Mutex::new(HashSet::new()));
+    let command_init_for_slave = Arc::new(Mutex::new(false));
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -53,6 +54,7 @@ pub async fn run_master(
                         let replica_info1 = Arc::clone(&replica_info);
                         let connections1 = Arc::clone(&connections);
                         let slave_ack_set1 = Arc::clone(&slave_ack_set);
+                        let command_init_for_replica1 = Arc::clone(&command_init_for_slave);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
                             read_handler(
@@ -63,7 +65,8 @@ pub async fn run_master(
                                 rdb1, 
                                 server_info1, 
                                 replica_info1,
-                                slave_ack_set1
+                                slave_ack_set1,
+                                command_init_for_replica1
                             ).await
                         });
 

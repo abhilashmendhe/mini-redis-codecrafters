@@ -14,7 +14,8 @@ pub async fn read_handler(
     rdb: Arc<Mutex<RDB>>,
     server_info: Arc<Mutex<ServerInfo>>,
     replica_info: Arc<Mutex<ReplicaInfo>>,
-    slave_ack_set: Arc<Mutex<HashSet<u16>>>
+    slave_ack_set: Arc<Mutex<HashSet<u16>>>,
+    command_init_for_replica: Arc<Mutex<bool>>
 ) -> Result<(), RedisErrors> {
 
     
@@ -110,6 +111,9 @@ pub async fn read_handler(
                     //     let mut slave_ack_set_gaurd = slave_ack_set.lock().await;
                     //     slave_ack_set_gaurd.clear();
                     // }
+                    {
+                        *command_init_for_replica.lock().await = true;
+                    }
 
                     {
                         let mut conn_gaurd = connections.lock().await;
@@ -241,17 +245,30 @@ pub async fn read_handler(
                     }
                 
                 } else if cmds[0].eq("WAIT") {
-                    
+                    let conn_slaves = {
+                        replica_info.lock().await.connected_slaves()
+                    };
                     // let expected_replica_reply = cmds[1].parse::<u16>()?;
-                    let timeout_millis = cmds[2].parse::<u64>()?;
-                    tokio::time::sleep(std::time::Duration::from_millis(timeout_millis)).await;
+                    if conn_slaves > 0 {
+                        let timeout_millis = cmds[2].parse::<u64>()?;
+                        tokio::time::sleep(std::time::Duration::from_millis(timeout_millis)).await;
+                    }
                     let reply_ack_slave_count = {
                         let slave_ack_set_gaurd = slave_ack_set.lock().await;
                         println!("{:?}", slave_ack_set_gaurd);
                         slave_ack_set_gaurd.len()
                     };
+                    
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        let connected_slaves = reply_ack_slave_count;
+                        let connected_slaves = {
+                            if *command_init_for_replica.lock().await {
+                                reply_ack_slave_count
+                            } else {
+                                conn_slaves as usize
+                            }
+                        };
+                        // let connected_slaves = reply_ack_slave_count;
+
                         let form = format!(":{}\r\n", connected_slaves);
                         client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
                     }
