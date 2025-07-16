@@ -1,5 +1,5 @@
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex};
 
@@ -13,7 +13,8 @@ pub async fn read_handler(
     kv_map: Arc<Mutex<HashMap<String, ValueStruct>>>,
     rdb: Arc<Mutex<RDB>>,
     server_info: Arc<Mutex<ServerInfo>>,
-    replica_info: Arc<Mutex<ReplicaInfo>>
+    replica_info: Arc<Mutex<ReplicaInfo>>,
+    slave_ack_set: Arc<Mutex<HashSet<u16>>>
 ) -> Result<(), RedisErrors> {
 
     
@@ -24,6 +25,8 @@ pub async fn read_handler(
     }
     println!("I am {}!. Accepted new connection from: {}", role,sock_addr);
     let mut buffer = [0u8; 1024];
+    // let count_slave_ack = 0;
+    // let mut slave_ack_set = HashSet::new();
     loop {
         match reader.read(&mut buffer).await {
             Ok(0) => {
@@ -103,6 +106,10 @@ pub async fn read_handler(
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
                         client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
                     }
+                    // {
+                    //     let mut slave_ack_set_gaurd = slave_ack_set.lock().await;
+                    //     slave_ack_set_gaurd.clear();
+                    // }
 
                     {
                         let mut conn_gaurd = connections.lock().await;
@@ -111,6 +118,8 @@ pub async fn read_handler(
                             if *_flag {
                                 println!("key: {}, flag: {}", _k, _flag);
                                 _tx.send((sock_addr, buffer[..n].to_vec()))?;
+                                // vv.extend_from_slice(b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
+                                _tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
                             } 
                         }
                     }
@@ -198,6 +207,14 @@ pub async fn read_handler(
                         }
                     } else if cmds[1].eq("ACK") {
                         println!("Received ACK from replica!");
+                        println!("Store reply here...");
+                        {
+                            let mut slave_ack_set_gaurd = slave_ack_set.lock().await;
+                            slave_ack_set_gaurd.insert(sock_addr.port());
+                            println!("{:?}", slave_ack_set_gaurd);
+                        }
+                        // slave_ack_set.insert(sock_addr.port());
+                        // println!("{:?}",slave_ack_set);
                     }
 
                 } else if cmds[0].eq("PSYNC") {
@@ -217,17 +234,24 @@ pub async fn read_handler(
                         let mut vv = b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec();
                         vv.extend_from_slice(header.as_bytes());
                         vv.extend_from_slice(&contents);
+                        // ##############################
                         // vv.extend_from_slice(b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
+                        // ##############################
                         client_tx.send((sock_addr, vv))?;
-
-                        // client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
-                        // client_tx.send((sock_addr, header.as_bytes().to_vec()))?;
-                        // client_tx.send((sock_addr, contents))?;
                     }
                 
                 } else if cmds[0].eq("WAIT") {
+                    
+                    // let expected_replica_reply = cmds[1].parse::<u16>()?;
+                    let timeout_millis = cmds[2].parse::<u64>()?;
+                    tokio::time::sleep(std::time::Duration::from_millis(timeout_millis)).await;
+                    let reply_ack_slave_count = {
+                        let slave_ack_set_gaurd = slave_ack_set.lock().await;
+                        println!("{:?}", slave_ack_set_gaurd);
+                        slave_ack_set_gaurd.len()
+                    };
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        let connected_slaves = {replica_info.lock().await.connected_slaves()};
+                        let connected_slaves = reply_ack_slave_count;
                         let form = format!(":{}\r\n", connected_slaves);
                         client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
                     }

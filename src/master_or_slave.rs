@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::{mpsc, Mutex};
@@ -27,6 +27,7 @@ pub async fn run_master(
     let listener = TcpListener::bind(ip_port).await?;
     std::mem::drop(server_info_gaurd);
 
+    let slave_ack_set: Arc<Mutex<HashSet<u16>>> = Arc::new(Mutex::new(HashSet::new()));
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -51,7 +52,7 @@ pub async fn run_master(
                         let server_info1 = Arc::clone(&server_info);
                         let replica_info1 = Arc::clone(&replica_info);
                         let connections1 = Arc::clone(&connections);
-
+                        let slave_ack_set1 = Arc::clone(&slave_ack_set);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
                             read_handler(
@@ -61,7 +62,8 @@ pub async fn run_master(
                                 kv_map1, 
                                 rdb1, 
                                 server_info1, 
-                                replica_info1
+                                replica_info1,
+                                slave_ack_set1
                             ).await
                         });
 

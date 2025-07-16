@@ -22,7 +22,6 @@ pub async fn handshake(
 ) -> Result<(), RedisErrors> {
 
     let recv_bytes_count = Arc::new(Mutex::new(0_usize));
-    let recv_flag         = Arc::new(Mutex::new(false));
     loop {
         {
             // If role is master break.. Master can't perform handshake..
@@ -61,24 +60,23 @@ pub async fn handshake(
 
         // Try to connect and do handshake
         let server_info1 = Arc::clone(&server_info);
+        let server_info2 = Arc::clone(&server_info);
         let reader1 = Arc::clone(&reader);
         let writer1 = Arc::clone(&writer);
         let kv_map1 = Arc::clone(&kv_map);
         let recv_bytes_count1 = Arc::clone(&recv_bytes_count);
-        let recv_flag1 = Arc::clone(&recv_flag);
+        let recv_bytes_count3 = Arc::clone(&recv_bytes_count);
         full_handshake(
             reader1, 
             writer1, 
             server_info1,
             kv_map1,
             recv_bytes_count1,
-            recv_flag1
         ).await?;
         
         println!("Handshake ->>> Connected and handshake complete");
         let kv_map1 = Arc::clone(&kv_map);
         let recv_bytes_count1= Arc::clone(&recv_bytes_count);
-        let recv_flag1 = Arc::clone(&recv_flag);
         let reader_task = tokio::spawn(async move {
         let mut buf = [0u8; 1024];
         let reader2 = Arc::clone(&reader);
@@ -87,20 +85,18 @@ pub async fn handshake(
             let writer2 = Arc::clone(&writer);
             let kv_map2 = Arc::clone(&kv_map1);
             let recv_bytes_count2 = Arc::clone(&recv_bytes_count1);
-            let recv_flag2 = Arc::clone(&recv_flag1);
             match reader2.lock().await.read(&mut buf).await {
                 Ok(0) => {
                     println!("Handshake ->>> Master closed connection");
                     break;
                 },
                 Ok(n) => {
-                    {      
-                    if *recv_flag2.lock().await {
-                        println!("No. of bytes: {}", n);
-                        *recv_bytes_count2.lock().await += n;
-                    }
-                        // println!("\n{}", String::from_utf8_lossy(&buf[..n]));
-                    }
+                    // {
+                    //     let port = server_info2.lock().await.tcp_port;
+                    //     if port > 6380 {
+                    //         tokio::time::sleep(std::time::Duration::from_millis(5000)).await;
+                    //     }
+                    // }
                     if let Ok(commands) = parse_multi_commands(&mut buf[..n]).await {
                         println!("Handshake ->>> Received: {:?}", commands);
                             
@@ -108,9 +104,11 @@ pub async fn handshake(
                                 commands, 
                                 writer2, 
                                 kv_map2, 
-                                recv_bytes_count2, 
-                                recv_flag2
+                                recv_bytes_count2,
                             ).await;
+                    }
+                    {
+                        *recv_bytes_count3.lock().await += n;
                     }
                 },
                 Err(e) => {
@@ -135,7 +133,6 @@ async fn full_handshake(
     server_info: Arc<Mutex<ServerInfo>>,
     kv_map: SharedMapT,
     recv_bytes_count: Arc<Mutex<usize>>,
-    recv_flag: Arc<Mutex<bool>>
 ) -> Result<(), RedisErrors> {
 
     let mut buffer = [0 as u8; 1024];
@@ -221,7 +218,6 @@ async fn full_handshake(
         writer, 
         kv_map, 
         recv_bytes_count, 
-        recv_flag
     ).await;
     Ok(())
 }

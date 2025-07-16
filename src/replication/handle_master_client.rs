@@ -9,9 +9,10 @@ pub async fn master_reader_handle(
     writer: Arc<Mutex<OwnedWriteHalf>>,
     kv_map: SharedMapT,
     recv_bytes_count: Arc<Mutex<usize>>,
-    recv_flag: Arc<Mutex<bool>>
 ) {
+    
     for cmd in commands {
+        // println!("In master_reader_handle - {:?}", cmd);
         if cmd.get(1).map(|s| s.as_str()) == Some("SET") {
             let key = cmd[3].as_str();
             let value = cmd[5].as_str();
@@ -24,19 +25,17 @@ pub async fn master_reader_handle(
                 value_struct.set_pxat(Some(now_ms));
             }
             insert(key.to_string(), value_struct, kv_map.clone()).await;
+            
         } else if cmd.get(1).map(|s| s.as_str()) == Some("REPLCONF") {
             let _ack = cmd[3].as_str();
             let _commands = cmd[5].as_str();
             let mut recv_byte_counts = 0;
             {
-                *recv_flag.lock().await = true;
-            }
-            {
                 recv_byte_counts += *recv_bytes_count.lock().await;
             }
             let recv_byte_cnt_str = format!("{}", recv_byte_counts);
             let repl_ack = format!("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${}\r\n{}\r\n",recv_byte_cnt_str.len(),recv_byte_counts);
-            println!("Writing ack back to master\n:{}",repl_ack);
+            // println!("Writing ack back to master\n:{}",repl_ack);
             {
                 let mut writer_gaurd = writer.lock().await;
                 let _ = writer_gaurd.write(repl_ack.as_bytes()).await;
