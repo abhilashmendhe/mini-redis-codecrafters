@@ -218,10 +218,6 @@ pub async fn read_handler(
                                 notify.notify_waiters();
                             }
                         }
-                        // {
-                        //     println!("{}",*slave_ack_count.lock().await);
-                        // }
-
                     }
 
                 } else if cmds[0].eq("PSYNC") {
@@ -258,10 +254,12 @@ pub async fn read_handler(
                     let conn_slaves = {
                         replica_info.lock().await.connected_slaves()
                     };
+                    let mut vecdequelen = 0;
                     if conn_slaves > 0 {
                         // Propagate commands
-                        {
+                        let vecduque_len = {
                             let mut store_commands_gaurd = store_commands.lock().await;
+                            let vecdeque_len = store_commands_gaurd.len();
                             while let Some(buffer) = store_commands_gaurd.pop_front() {
                                 let connections1 = Arc::clone(&connections);
                                 propagate_master_commands(
@@ -270,52 +268,59 @@ pub async fn read_handler(
                                     buffer
                                 ).await?;
                             }
+                            vecdeque_len
+                        };
+                        vecdequelen = vecduque_len;
+                        // Propagate "REPLCONF GETACK *" to replicas     
+                        if vecduque_len > 0 {              
+                            let connections1 = Arc::clone(&connections);
+                            propagate_replconf_getack(sock_addr, connections1).await?;
+                            // Sleep for the desired amount of time...
+                            let timeout_millis = cmds[2].parse::<u64>()?;
                             
-                        }
-                        // Propagate "REPLCONF GETACK *" to replicas                   
-                        let connections1 = Arc::clone(&connections);
-                        propagate_replconf_getack(sock_addr, connections1).await?;
-                        // Sleep for the desired amount of time...
-                        let timeout_millis = cmds[2].parse::<u64>()?;
-                        
-                        let t1 = tokio::spawn(
-                        tokio::time::sleep(std::time::Duration::from_millis(timeout_millis))
-                        );
-                        let t2 = tokio::spawn({
-                            let count = slave_ack_count.clone();
-                            let notify = notify.clone();
-                            async move {
-                                loop {
-                                    {
-                                        let val = *count.lock().await;
-                                        if val > 0 {
-                                            return val;
+                            let t1 = tokio::spawn(
+                            tokio::time::sleep(std::time::Duration::from_millis(timeout_millis))
+                            );
+                            let t2 = tokio::spawn({
+                                let count = slave_ack_count.clone();
+                                let notify = notify.clone();
+                                async move {
+                                    loop {
+                                        {
+                                            let val = *count.lock().await;
+                                            if val > 0 {
+                                                return val;
+                                            }
                                         }
+                                        notify.notified().await;
                                     }
-                                    notify.notified().await;
+                                }
+                            });
+                            tokio::select! {
+                                _ = t1 => {
+                                    println!("Timeout occurred first!");
+                                }
+                                res = t2 => {
+                                    println!("Ack count detected: {}", res.unwrap());
                                 }
                             }
-                        });
-                        tokio::select! {
-                            _ = t1 => {
-                                println!("Timeout occurred first!");
-                            }
-                            res = t2 => {
-                                println!("Ack count detected: {}", res.unwrap());
-                            }
                         }
-                    }
+                    };
+                        // vecdequelen = vecdeque_len;
                     println!("\nDone sleeping for WAIT!");
 
                     // // Propagate "REPLCONF GETACK *" to replicas                   
                     // let connections1 = Arc::clone(&connections);
                     // propagate_replconf_getack(sock_addr, connections1).await?;
-                    
-                    let reply_ack_slave_count = {
-                        while *slave_ack_count.lock().await <= 0 {}
-                        println!("what");
-                        *slave_ack_count.lock().await
-                    };
+                    let mut reply_ack_slave_count = 0;
+                    if vecdequelen > 0 {
+                        let replyackslavecount = {
+                            while *slave_ack_count.lock().await <= 0 {}
+                            println!("what");
+                            *slave_ack_count.lock().await
+                        };
+                        reply_ack_slave_count = replyackslavecount;
+                    }
                     println!("Reply slave count: {}",reply_ack_slave_count);
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
                         let connected_slaves = {
