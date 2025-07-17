@@ -439,6 +439,81 @@ pub async fn read_handler(
                         let form = format!(":{}\r\n",list_len);
                         client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
                     }
+
+                } else if cmds[0].eq("LRANGE") {
+
+                    let listkey = &cmds[1];
+                    let list_items = {
+                        
+                        let kv_map_gaurd = kv_map.lock().await;
+                        let list_items = match kv_map_gaurd.get(listkey) {
+                            Some(value_struct) => {
+                                match &value_struct.value {
+                                    Value::STRING(_) => todo!(),
+                                    Value::NUMBER(_) => todo!(),
+                                    Value::LIST(items) => items.to_owned(),
+                                    Value::STREAM(_) => todo!(),
+                                }
+                            },
+                            None => {
+                                VecDeque::new()
+                            },
+                        }; 
+                        list_items
+                    };
+                    println!("List itesm -> {:?}",&list_items);
+                    let list_len = list_items.len();
+                    let start = {
+                        let in_list_len = list_len as i64;
+                        let v = ((cmds[2].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
+                        if v < 0 {
+                            0
+                        } else {
+                            v
+                        }
+                    };
+                    let stop = {
+                        let in_list_len = list_len as i64;
+                        let v = ((cmds[2].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
+                        if v < 0 {
+                            0
+                        } else {
+                            v
+                        }
+                    };
+                    println!("Start : {}, and end : {}", start, stop);
+                    let mut form = String::new();
+                    if start >= list_items.len() as i64 || start > stop {
+                        println!("if cond empty array sendng");
+                        form.push_str(&format!("*0\r\n"));
+                    } else {
+                        println!("In else ");
+                        let stop = {
+                            if stop > list_items.len() as i64 {
+                                list_items.len() as  i64
+                            } else {
+                                stop
+                            }
+                        };
+                        let mut repl_str = String::new();
+                        let mut count = 0;
+                        for (ind, item) in list_items.iter().enumerate() {
+                            if ind as i64 >= start && ind as i64 <= stop {
+                                println!("list_items[{}]={}",ind, item);
+                                repl_str.push('$');
+                                repl_str.push_str(&item.len().to_string());
+                                repl_str.push_str("\r\n");
+                                repl_str.push_str(item);
+                                repl_str.push_str("\r\n");
+                                count += 1;
+                            }
+                        }
+                        form.push_str(&format!("*{}\r\n{}", count, repl_str));
+                    }
+                    println!("{}",form);
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                    }
                 }
 
 
