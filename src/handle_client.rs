@@ -471,7 +471,7 @@ pub async fn read_handler(
                             if v < 0 {
                                 in_list_len + v
                             } else {
-                                in_list_len
+                                v
                             }
                         };
                         if v < 0 {
@@ -488,7 +488,7 @@ pub async fn read_handler(
                             if v < 0 {
                                 in_list_len + v
                             } else {
-                                in_list_len
+                                v
                             }
                         };
                         if v < 0 {
