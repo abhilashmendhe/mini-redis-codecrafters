@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc,
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify}};
 
-use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{llen, lrange, push}, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
+use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{llen, lpop, lrange, push}, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn read_handler(
@@ -406,6 +406,13 @@ pub async fn read_handler(
                 } else if cmds[0].eq("LLEN") {
 
                     llen(&cmds, 
+                        sock_addr, 
+                        Arc::clone(&kv_map), 
+                        Arc::clone(&connections1)
+                    ).await?;
+                } else if cmds[0].eq("LPOP") {
+                    
+                    lpop(&cmds, 
                         sock_addr, 
                         Arc::clone(&kv_map), 
                         Arc::clone(&connections1)

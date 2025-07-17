@@ -48,7 +48,7 @@ pub async fn push(
                         list_items.push_front(item.to_string());
                     }
                 }
-                println!("{:?}",list_items);
+                // println!("{:?}",list_items);
                 let value_struct = ValueStruct::new(
                     Value::LIST(list_items),
                     None, 
@@ -69,7 +69,7 @@ pub async fn push(
     };
     let list_len = value_struct.value_len();
     insert(listkey.to_string(), value_struct, kv_map.clone()).await;
-    println!("done inserting");
+
     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
         let form = format!(":{}\r\n",list_len);
         client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
@@ -92,7 +92,7 @@ pub async fn lrange(
     let start = compute_index(&cmds[2], list_len as i64).await?;
     let stop = compute_index(&cmds[3], list_len as i64).await?;
 
-    println!("Start : {}, and end : {}", start, stop);
+    // println!("Start : {}, and end : {}", start, stop);
     let mut form = String::new();
     if start >= list_items.len() as i64 || start > stop {
         form.push_str(&format!("*0\r\n"));
@@ -108,7 +108,7 @@ pub async fn lrange(
         let mut count = 0;
         for (ind, item) in list_items.iter().enumerate() {
             if ind as i64 >= start && ind as i64 <= stop {
-                println!("list_items[{}]={}",ind, item);
+                // println!("list_items[{}]={}",ind, item);
                 repl_str.push('$');
                 repl_str.push_str(&item.len().to_string());
                 repl_str.push_str("\r\n");
@@ -140,4 +140,73 @@ pub async fn llen(
         client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
     }
     Ok(())
+}
+
+pub async fn lpop(
+    cmds: &Vec<String>,
+    sock_addr: SocketAddr,
+    kv_map: SharedMapT,
+    connections: SharedConnectionHashMapT
+) -> Result<(), RedisErrors> {
+
+    let listkey = &cmds[1];
+    let mut num_items = 0;
+    let cmds_len = cmds.len();
+    if cmds_len > 2 {
+        num_items += cmds[2].parse::<usize>()?;
+    }
+    let mut form = String::new();
+    {
+        let mut kv_map_gaurd = kv_map.lock().await;
+        match kv_map_gaurd.get_mut(listkey) {
+            Some(value_struct) => {
+                match value_struct.mut_value() {
+                    Value::STRING(_) => todo!(),
+                    Value::NUMBER(_) => todo!(),
+                    Value::LIST(items) => {
+                        if cmds_len > 2 {
+                            let mut nform = String::new();
+                            let mut count = 0;
+                            while num_items > 0 {
+                                if items.len() <= 0 {
+                                    break;
+                                }
+                                if let Some(k) = items.pop_front() {
+                                    nform.push('$');
+                                    nform.push_str(&k.len().to_string());
+                                    nform.push_str("\r\n");
+                                    nform.push_str(&k);
+                                    nform.push_str("\r\n");   
+                                }
+                                count += 1;
+                                num_items -= 1;
+                            }
+                            form.push('*');
+                            form.push_str(&count.to_string());
+                            form.push_str("\r\n");
+                            form.push_str(&nform);
+                        } else {
+                            if let Some(k) = items.pop_front() {
+                                form.push('$');
+                                form.push_str(&k.len().to_string());
+                                form.push_str("\r\n");
+                                form.push_str(&k);
+                                form.push_str("\r\n");   
+                            } else {
+                                form.push_str(":0\r\n");
+                            }
+                        }
+                    },
+                    Value::STREAM(_) => todo!(),
+                }
+            },
+            None => {
+                form.push_str(":0\r\n");
+            },
+        }
+    }
+    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+    }
+    Ok(())    
 }
