@@ -6,7 +6,7 @@ use tokio::signal;
 use tokio::sync::{mpsc, Mutex, Notify};
 
 // use crate::connection_handling::_periodic_ack_slave;
-use crate::connection_handling::{SharedConnectionHashMapT, _periodic_ack_slave};
+use crate::connection_handling::{SharedConnectionHashMapT};
 use crate::errors::RedisErrors;
 use crate::handle_client::{read_handler, write_handler};
 use crate::rdb_persistence::rdb_persist::RDB;

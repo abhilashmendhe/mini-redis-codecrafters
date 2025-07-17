@@ -2,7 +2,7 @@ use std::{sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf, sync::Mutex};
 
-use crate::redis_key_value_struct::{insert, SharedMapT, ValueStruct};
+use crate::redis_key_value_struct::{insert, SharedMapT, Value, ValueStruct};
 
 pub async fn master_reader_handle(
     commands: Vec<Vec<String>>,
@@ -28,7 +28,11 @@ pub async fn master_reader_handle(
         if cmd.get(1).map(|s| s.as_str()) == Some("SET") {
             let key = cmd[3].as_str();
             let value = cmd[5].as_str();
-            let mut value_struct = ValueStruct::new(value.to_string(), None, None);
+            let value = match value.parse::<i64>() {
+                Ok(num) => Value::NUMBER(num),
+                Err(_) => Value::STRING(value.to_string()),
+            };
+            let mut value_struct = ValueStruct::new(value, None, None);
             if cmd.len() >= 7 {
                 let px = cmd[9].parse::<u128>().unwrap();
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();

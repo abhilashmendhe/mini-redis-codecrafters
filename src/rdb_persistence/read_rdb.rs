@@ -1,7 +1,7 @@
 use std::{fs, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::{errors::RedisErrors, rdb_persistence::{lzf_alg::decompress, rdb_persist::RDB}, redis_key_value_struct::{insert, SharedMapT, ValueStruct}};
+use crate::{errors::RedisErrors, rdb_persistence::{lzf_alg::decompress, rdb_persist::RDB}, redis_key_value_struct::{insert, SharedMapT, Value, ValueStruct}};
 
 /*
     0 = String Encoding
@@ -107,8 +107,8 @@ async fn extract_key_pairs(
                     let pxat_str = &utx[4..utx.len()-1];
                     let pxat = pxat_str.parse::<u128>()?;
                     let key = &kv_vec[1];
-                    let value = &kv_vec[2];
-                    let value_struct = ValueStruct::new(value.to_string(),Some(pxat),Some(pxat));
+                    let value = Value::STRING(kv_vec[2].to_string());
+                    let value_struct = ValueStruct::new(value,Some(pxat),Some(pxat));
                     // tokio::runtime::Runtime::new()?.block_on(
                     insert(key.to_string(), value_struct, kv_map.clone()).await;
                     // );
@@ -116,8 +116,8 @@ async fn extract_key_pairs(
                 }
             } else {
                 let key = &kv_vec[0];
-                let value = &kv_vec[1];
-                let value_struct = ValueStruct::new(value.to_string(),None, None);
+                let value = Value::STRING(kv_vec[1].to_string());
+                let value_struct = ValueStruct::new(value,None, None);
                 // tokio::runtime::Runtime::new()?.block_on(
                 insert(key.to_string(), value_struct, kv_map.clone()).await;
                 // );

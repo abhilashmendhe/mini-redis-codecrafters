@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc,
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify}};
 
-use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
+use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn read_handler(
@@ -73,8 +73,16 @@ pub async fn read_handler(
                     let value_struct = get(key.to_string(), kv_map.clone()).await;
 
                     if let Some(vs) = value_struct {
-                        let value = vs.value();
+                        let value = {
+                            match vs.value() {
+                                crate::redis_key_value_struct::Value::STRING(s) => s,
+                                crate::redis_key_value_struct::Value::NUMBER(num) => num.to_string(),
+                                crate::redis_key_value_struct::Value::LIST(_) => "".to_string(),
+                                crate::redis_key_value_struct::Value::STREAM(_) => "".to_string(),
+                            }
+                        };
                         let value_len = value.len();
+
                         let stream_write_fmt = format!("${}\r\n{}\r\n", value_len, value);
                         println!("stream_write_fmt:{}",stream_write_fmt);
                         if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
@@ -91,8 +99,13 @@ pub async fn read_handler(
                     let value = cmds[2].as_str();
                     
                     // println!("cmds vec len: {}",cmds.len());
+                    let value = match value.parse::<i64>() {
+                        Ok(num) => Value::NUMBER(num),
+                        Err(_) => Value::STRING(value.to_string()),
+                    };
                     let mut value_struct = ValueStruct::new(
-                        value.to_string(), 
+                        // value.to_string(), 
+                        value,
                         None, 
                         None, 
                     );
@@ -117,10 +130,10 @@ pub async fn read_handler(
                         *command_init_for_replica.lock().await = true;
                     }
                     let slave_count = {
-                        println!("Replicas Set: {:?}",slave_ack_set.lock().await);
+                        // println!("Replicas Set: {:?}",slave_ack_set.lock().await);
                         slave_ack_set.lock().await.len()
                     };
-                    println!("Slave count: {}", slave_count);
+                    // println!("Slave count: {}", slave_count);
                     if slave_count > 0 {
                         // Don't propagate the commands, store commands(Vec<u8>) in a vector or queue..
                         store_commands.lock().await.push_back(buffer[..n].to_vec());
@@ -223,8 +236,8 @@ pub async fn read_handler(
                             client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
                         }
                     } else if cmds[1].eq("ACK") {
-                        println!("Received ACK from replica!");
-                        println!("Store reply here...");
+                        // println!("Received ACK from replica!");
+                        // println!("Store reply here...");
                         
                         // Increase reply count
                         {
@@ -351,7 +364,84 @@ pub async fn read_handler(
                         client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
                     }
                     {   *slave_ack_count.lock().await = 0;   }
+                } else if cmds[0].eq("TYPE") {
+                    let v_type = {
+                        let key = &cmds[1];
+                        if let Some(v) = kv_map.lock().await.get(key) {
+                            let value = v.value();
+                            let v_type = match value {
+                                Value::STRING(_) => "+string\r\n",
+                                Value::NUMBER(_) => "+number\r\n",
+                                Value::LIST(_) => "+list\r\n",
+                                Value::STREAM(_) => "+stream\r\n",
+                            };
+                            v_type
+                        } else {
+                            "+none\r\n"
+                        }
+                    };
+
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        let form = format!("{}",v_type);
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                    }
+                     
+                } else if cmds[0].eq("RPUSH") {
+
+                    let listkey = &cmds[1];
+                    let value_struct = {
+                        let mut kv_map_gaurd = kv_map.lock().await;
+
+                        let value_struct = match kv_map_gaurd.get_mut(listkey) {
+                            Some(value_struct) => {
+                                match &mut value_struct.value {
+                                    Value::STRING(_) => todo!(),
+                                    Value::NUMBER(_) => todo!(),
+                                    Value::LIST(list_items) => {
+                                        for item in &cmds[2..] {
+                                            list_items.push_back(item.to_string());
+                                        }
+                                    },
+                                    Value::STREAM(_) => todo!(),
+                                }
+                                value_struct.to_owned()
+                            },
+                            None => {
+                                let mut list_items = VecDeque::new();
+                                
+                                // items.push_back("haha".to_string());
+                                for item in &cmds[2..] {
+                                    list_items.push_back(item.to_string());
+                                }
+                                println!("{:?}",list_items);
+                                let value_struct = ValueStruct::new(
+                                    Value::LIST(list_items),
+                                    None, 
+                                    None, 
+                                );
+                                // if cmds.len() == 5 {
+                                //     let px = cmds[4].parse::<u128>()?;
+                                //     let now = SystemTime::now()
+                                //             .duration_since(UNIX_EPOCH)?;
+                                //     let now_ms = now.as_millis() + px as u128;
+                                //     value_struct.set_px(Some(px));
+                                //     value_struct.set_pxat(Some(now_ms));
+                                // }
+                                value_struct
+                            },
+                        };
+                        value_struct
+                    };
+                    let list_len = value_struct.value_len();
+                    insert(listkey.to_string(), value_struct, kv_map.clone()).await;
+                    println!("done inserting");
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        let form = format!(":{}\r\n",list_len);
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                    }
                 }
+
+
 
             },
             Err(e) => {

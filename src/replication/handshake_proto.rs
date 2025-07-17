@@ -80,7 +80,7 @@ pub async fn handshake(
         println!("Handshake ->>> Connected and handshake complete");
         let kv_map1 = Arc::clone(&kv_map);
         let recv_bytes_count1= Arc::clone(&recv_bytes_count);
-        let server_info2 = Arc::clone(&server_info);
+        // let server_info2 = Arc::clone(&server_info);
         let reader_task = tokio::spawn(async move {
         let mut buf = [0u8; 1024];
         let reader2 = Arc::clone(&reader);
