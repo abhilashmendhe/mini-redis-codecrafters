@@ -440,6 +440,60 @@ pub async fn read_handler(
                         client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
                     }
 
+                } else if cmds[0].eq("LPUSH") {
+
+                    let listkey = &cmds[1];
+                    let value_struct = {
+                        let mut kv_map_gaurd = kv_map.lock().await;
+
+                        let value_struct = match kv_map_gaurd.get_mut(listkey) {
+                            Some(value_struct) => {
+                                match &mut value_struct.value {
+                                    Value::STRING(_) => todo!(),
+                                    Value::NUMBER(_) => todo!(),
+                                    Value::LIST(list_items) => {
+                                        for item in &cmds[2..] {
+                                            list_items.push_front(item.to_string());
+                                        }
+                                    },
+                                    Value::STREAM(_) => todo!(),
+                                }
+                                value_struct.to_owned()
+                            },
+                            None => {
+                                let mut list_items = VecDeque::new();
+                                
+                                // items.push_back("haha".to_string());
+                                for item in &cmds[2..] {
+                                    list_items.push_front(item.to_string());
+                                }
+                                println!("{:?}",list_items);
+                                let value_struct = ValueStruct::new(
+                                    Value::LIST(list_items),
+                                    None, 
+                                    None, 
+                                );
+                                // if cmds.len() == 5 {
+                                //     let px = cmds[4].parse::<u128>()?;
+                                //     let now = SystemTime::now()
+                                //             .duration_since(UNIX_EPOCH)?;
+                                //     let now_ms = now.as_millis() + px as u128;
+                                //     value_struct.set_px(Some(px));
+                                //     value_struct.set_pxat(Some(now_ms));
+                                // }
+                                value_struct
+                            },
+                        };
+                        value_struct
+                    };
+                    let list_len = value_struct.value_len();
+                    insert(listkey.to_string(), value_struct, kv_map.clone()).await;
+                    println!("done inserting");
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        let form = format!(":{}\r\n",list_len);
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                    }
+
                 } else if cmds[0].eq("LRANGE") {
 
                     let listkey = &cmds[1];
