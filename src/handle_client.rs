@@ -474,7 +474,7 @@ pub async fn read_handler(
                     };
                     let stop = {
                         let in_list_len = list_len as i64;
-                        let v = ((cmds[2].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
+                        let v = ((cmds[3].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
                         if v < 0 {
                             0
                         } else {
