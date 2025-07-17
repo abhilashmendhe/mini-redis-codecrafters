@@ -89,8 +89,8 @@ pub async fn lrange(
     // println!("List itesm -> {:?}",&list_items);
 
     let list_len = list_items.len();
-    let start = compute_index(&cmds, list_len as i64).await?;
-    let stop = compute_index(&cmds, list_len as i64).await?;
+    let start = compute_index(&cmds[2], list_len as i64).await?;
+    let stop = compute_index(&cmds[3], list_len as i64).await?;
 
     println!("Start : {}, and end : {}", start, stop);
     let mut form = String::new();

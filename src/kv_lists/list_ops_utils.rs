@@ -24,13 +24,13 @@ pub async fn fetch_list(
 }
 
 pub async fn compute_index(
-    cmds: &Vec<String>,
+    index: &String,
     list_len: i64
 ) -> Result<i64, RedisErrors> {
 
     let in_list_len = list_len as i64;
         // let v = ((cmds[3].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
-        let v = cmds[2].parse::<i64>()?;
+        let v = index.parse::<i64>()?;
         let v = {
             if v < 0 {
                 in_list_len + v
