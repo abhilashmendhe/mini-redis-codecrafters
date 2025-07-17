@@ -10,6 +10,7 @@ mod connection_handling;
 mod master_or_slave;
 mod parse_redis_bytes_file;
 mod run_node;
+mod kv_lists;
 
 use crate::errors::RedisErrors;
 

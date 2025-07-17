@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc,
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify}};
 
-use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
+use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{llen, lrange, push}, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn read_handler(
@@ -29,14 +29,16 @@ pub async fn read_handler(
     }
     println!("I am {}!. Accepted new connection from: {}", role,sock_addr);
     let mut buffer = [0u8; 1024];
-   
+    let connections1 = Arc::clone(&connections);
+
     loop {
         match reader.read(&mut buffer).await {
             Ok(0) => {
                 println!("0 bytes received");
                 let mut clients_ports = vec![];
+                let connections2 = Arc::clone(&connections1);
                 {
-                    let conn_gaurd = connections.lock().await;
+                    let conn_gaurd = connections2.lock().await;
                     for (k, (_tx, _flag)) in conn_gaurd.iter() {
                         // println!("key: {}, flag: {}", k, _flag);
                         if !*_flag {
@@ -46,7 +48,7 @@ pub async fn read_handler(
                 }
                 for port in clients_ports {
                     println!("Client {}:{}, disconnected....", sock_addr.ip(), sock_addr.port());
-                    connections.lock().await.remove(&port);
+                    connections2.lock().await.remove(&port);
                 }
                 println!();
                 return Ok(());
@@ -386,204 +388,28 @@ pub async fn read_handler(
                         client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
                     }
                      
-                } else if cmds[0].eq("RPUSH") {
+                } else if cmds[0].eq("RPUSH") || cmds[0].eq("LPUSH") {
+                    push(&cmds, 
+                        sock_addr, 
+                        Arc::clone(&kv_map), 
+                        Arc::clone(&connections1)
+                    ).await?;
+                } 
+                else if cmds[0].eq("LRANGE") {
 
-                    let listkey = &cmds[1];
-                    let value_struct = {
-                        let mut kv_map_gaurd = kv_map.lock().await;
+                    lrange(&cmds, 
+                        sock_addr, 
+                        Arc::clone(&kv_map), 
+                        Arc::clone(&connections1)
+                    ).await?;
 
-                        let value_struct = match kv_map_gaurd.get_mut(listkey) {
-                            Some(value_struct) => {
-                                match &mut value_struct.value {
-                                    Value::STRING(_) => todo!(),
-                                    Value::NUMBER(_) => todo!(),
-                                    Value::LIST(list_items) => {
-                                        for item in &cmds[2..] {
-                                            list_items.push_back(item.to_string());
-                                        }
-                                    },
-                                    Value::STREAM(_) => todo!(),
-                                }
-                                value_struct.to_owned()
-                            },
-                            None => {
-                                let mut list_items = VecDeque::new();
-                                
-                                // items.push_back("haha".to_string());
-                                for item in &cmds[2..] {
-                                    list_items.push_back(item.to_string());
-                                }
-                                println!("{:?}",list_items);
-                                let value_struct = ValueStruct::new(
-                                    Value::LIST(list_items),
-                                    None, 
-                                    None, 
-                                );
-                                // if cmds.len() == 5 {
-                                //     let px = cmds[4].parse::<u128>()?;
-                                //     let now = SystemTime::now()
-                                //             .duration_since(UNIX_EPOCH)?;
-                                //     let now_ms = now.as_millis() + px as u128;
-                                //     value_struct.set_px(Some(px));
-                                //     value_struct.set_pxat(Some(now_ms));
-                                // }
-                                value_struct
-                            },
-                        };
-                        value_struct
-                    };
-                    let list_len = value_struct.value_len();
-                    insert(listkey.to_string(), value_struct, kv_map.clone()).await;
-                    println!("done inserting");
-                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        let form = format!(":{}\r\n",list_len);
-                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-                    }
+                } else if cmds[0].eq("LLEN") {
 
-                } else if cmds[0].eq("LPUSH") {
-
-                    let listkey = &cmds[1];
-                    let value_struct = {
-                        let mut kv_map_gaurd = kv_map.lock().await;
-
-                        let value_struct = match kv_map_gaurd.get_mut(listkey) {
-                            Some(value_struct) => {
-                                match &mut value_struct.value {
-                                    Value::STRING(_) => todo!(),
-                                    Value::NUMBER(_) => todo!(),
-                                    Value::LIST(list_items) => {
-                                        for item in &cmds[2..] {
-                                            list_items.push_front(item.to_string());
-                                        }
-                                    },
-                                    Value::STREAM(_) => todo!(),
-                                }
-                                value_struct.to_owned()
-                            },
-                            None => {
-                                let mut list_items = VecDeque::new();
-                                
-                                // items.push_back("haha".to_string());
-                                for item in &cmds[2..] {
-                                    list_items.push_front(item.to_string());
-                                }
-                                println!("{:?}",list_items);
-                                let value_struct = ValueStruct::new(
-                                    Value::LIST(list_items),
-                                    None, 
-                                    None, 
-                                );
-                                // if cmds.len() == 5 {
-                                //     let px = cmds[4].parse::<u128>()?;
-                                //     let now = SystemTime::now()
-                                //             .duration_since(UNIX_EPOCH)?;
-                                //     let now_ms = now.as_millis() + px as u128;
-                                //     value_struct.set_px(Some(px));
-                                //     value_struct.set_pxat(Some(now_ms));
-                                // }
-                                value_struct
-                            },
-                        };
-                        value_struct
-                    };
-                    let list_len = value_struct.value_len();
-                    insert(listkey.to_string(), value_struct, kv_map.clone()).await;
-                    println!("done inserting");
-                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        let form = format!(":{}\r\n",list_len);
-                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-                    }
-
-                } else if cmds[0].eq("LRANGE") {
-
-                    let listkey = &cmds[1];
-                    let list_items = {
-                        
-                        let kv_map_gaurd = kv_map.lock().await;
-                        let list_items = match kv_map_gaurd.get(listkey) {
-                            Some(value_struct) => {
-                                match &value_struct.value {
-                                    Value::STRING(_) => todo!(),
-                                    Value::NUMBER(_) => todo!(),
-                                    Value::LIST(items) => items.to_owned(),
-                                    Value::STREAM(_) => todo!(),
-                                }
-                            },
-                            None => {
-                                VecDeque::new()
-                            },
-                        }; 
-                        list_items
-                    };
-                    println!("List itesm -> {:?}",&list_items);
-                    let list_len = list_items.len();
-                    let start = {
-                        let in_list_len = list_len as i64;
-                        // let v = ((cmds[3].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
-                        let v = cmds[2].parse::<i64>()?;
-                        let v = {
-                            if v < 0 {
-                                in_list_len + v
-                            } else {
-                                v
-                            }
-                        };
-                        if v < 0 {
-                            0
-                        } else {
-                            v
-                        }
-                    };
-                    let stop = {
-                        let in_list_len = list_len as i64;
-                        // let v = ((cmds[3].parse::<i64>()? % in_list_len) + in_list_len) % in_list_len;
-                        let v = cmds[3].parse::<i64>()?;
-                        let v = {
-                            if v < 0 {
-                                in_list_len + v
-                            } else {
-                                v
-                            }
-                        };
-                        if v < 0 {
-                            0
-                        } else {
-                            v
-                        }
-                    };
-                    println!("Start : {}, and end : {}", start, stop);
-                    let mut form = String::new();
-                    if start >= list_items.len() as i64 || start > stop {
-                        println!("if cond empty array sendng");
-                        form.push_str(&format!("*0\r\n"));
-                    } else {
-                        println!("In else ");
-                        let stop = {
-                            if stop > list_items.len() as i64 {
-                                list_items.len() as  i64
-                            } else {
-                                stop
-                            }
-                        };
-                        let mut repl_str = String::new();
-                        let mut count = 0;
-                        for (ind, item) in list_items.iter().enumerate() {
-                            if ind as i64 >= start && ind as i64 <= stop {
-                                println!("list_items[{}]={}",ind, item);
-                                repl_str.push('$');
-                                repl_str.push_str(&item.len().to_string());
-                                repl_str.push_str("\r\n");
-                                repl_str.push_str(item);
-                                repl_str.push_str("\r\n");
-                                count += 1;
-                            }
-                        }
-                        form.push_str(&format!("*{}\r\n{}", count, repl_str));
-                    }
-                    println!("{}",form);
-                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-                    }
+                    llen(&cmds, 
+                        sock_addr, 
+                        Arc::clone(&kv_map), 
+                        Arc::clone(&connections1)
+                    ).await?;
                 }
 
 
