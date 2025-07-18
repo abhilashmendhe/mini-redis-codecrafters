@@ -42,6 +42,13 @@ pub async fn push(
                             let _ = waiter.send((item, sock_addr));
                         }
                     }
+                    list_len = {
+                        if list_len > list_items.len() {
+                            list_len
+                        } else {
+                            list_items.len()
+                        }
+                    };
                 },
                 Value::STREAM(_) => todo!(),
             }
@@ -64,6 +71,13 @@ pub async fn push(
                     let _ = waiter.send((item,sock_addr));
                 }
             }
+            list_len = {
+                if list_len > list_items.len() {
+                    list_len
+                } else {
+                    list_items.len()
+                }
+            };
             // println!("{:?}",list_items);
             let value_struct = ValueStruct::new(
                 Value::LIST(list_items),
@@ -84,7 +98,9 @@ pub async fn push(
         value_struct
     };
     insert(listkey.to_string(), value_struct, kv_map.clone()).await;
-
+    // let new_list_len = {
+    //     if list_len > 
+    // }
     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
         let form = format!(":{}\r\n",list_len);
         client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
