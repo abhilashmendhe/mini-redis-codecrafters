@@ -1,30 +1,28 @@
 use std::{net::SocketAddr, time::{SystemTime, UNIX_EPOCH}};
 
-use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors, redis_key_value_struct::{insert, SharedMapT, ValueStruct}};
+use crate::{basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors};
 
 pub async fn incr_ops(
     cmds: &Vec<String>,
-    sock_addr: SocketAddr, 
     kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT
-) -> Result<(), RedisErrors> {
+) -> Result<String, RedisErrors> {
 
     let key = &cmds[1];
     let mut form = String::new();
     let f = {
         if let Some(value_struct)  = kv_map.lock().await.get_mut(key) {
             match value_struct.mut_value() {
-                crate::redis_key_value_struct::Value::STRING(_) => {
+                Value::STRING(_) => {
                     form.push_str("-ERR value is not an integer or out of range\r\n");
                 },
-                crate::redis_key_value_struct::Value::NUMBER(num) => {
+                Value::NUMBER(num) => {
                     *num += 1;
                     form.push(':');
                     form.push_str(&*num.to_string());
                     form.push_str("\r\n");
                 },
-                crate::redis_key_value_struct::Value::LIST(_) => {},
-                crate::redis_key_value_struct::Value::STREAM(_) => {},
+                Value::LIST(_) => {},
+                Value::STREAM(_) => {},
             }
             false
         } else {
@@ -34,7 +32,7 @@ pub async fn incr_ops(
     if f {
         let mut value_struct = ValueStruct::new(
             // value.to_string(), 
-            crate::redis_key_value_struct::Value::NUMBER(1),
+            Value::NUMBER(1),
             None, 
             None, 
         );
@@ -52,8 +50,16 @@ pub async fn incr_ops(
         form.push('1');
         form.push_str("\r\n");
     }
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-    }
-    Ok(())
+    
+    Ok(form)
+}
+
+
+pub async fn multi(
+    cmds: &Vec<String>,
+    kv_map: SharedMapT,
+) -> Result<String, RedisErrors> {
+
+    let form = "+OK\r\n".to_string();
+    Ok(form)
 }

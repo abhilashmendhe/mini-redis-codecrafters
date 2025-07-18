@@ -1,9 +1,9 @@
 
-use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::type_ops, transactions::transac_ops::incr_ops};
+use crate::{basics::{basic_ops::{get, set}, kv_ds::{ValueStruct}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::parse_recv_bytes, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::type_ops, transactions::transac_ops::{incr_ops, multi}};
 use crate::rdb_persistence::rdb_persist::RDB;
 
 pub async fn read_handler(
@@ -71,65 +71,23 @@ pub async fn read_handler(
                 } else if cmds[0].eq("BYE") {
                     println!("Bye received from replica: {}",sock_addr);
                     connections.lock().await.remove(&sock_addr.port());
+
                 } else if cmds[0] == String::from("GET") {
 
-                    let key = cmds[1].as_str();
-                    let value_struct = get(key.to_string(), kv_map.clone()).await;
+                    let form = get(&cmds, kv_map.clone()).await;
 
-                    if let Some(vs) = value_struct {
-                        let value = {
-                            match vs.value() {
-                                crate::redis_key_value_struct::Value::STRING(s) => s,
-                                crate::redis_key_value_struct::Value::NUMBER(num) => num.to_string(),
-                                crate::redis_key_value_struct::Value::LIST(_) => "".to_string(),
-                                crate::redis_key_value_struct::Value::STREAM(_) => "".to_string(),
-                            }
-                        };
-                        let value_len = value.len();
-
-                        let stream_write_fmt = format!("${}\r\n{}\r\n", value_len, value);
-                        println!("stream_write_fmt:{}",stream_write_fmt);
-                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                            client_tx.send((sock_addr, stream_write_fmt.as_bytes().to_vec()))?;
-                        }
-                    } else {
-                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                            client_tx.send((sock_addr, b"$-1\r\n".to_vec()))?;
-                        }
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
                     }
+
                 } else if cmds[0] == String::from("SET") {
 
-                    let key = cmds[1].as_str();
-                    let value = cmds[2].as_str();
-                    
-                    // println!("cmds vec len: {}",cmds.len());
-                    let value = match value.parse::<i64>() {
-                        Ok(num) => Value::NUMBER(num),
-                        Err(_) => Value::STRING(value.to_string()),
-                    };
-                    let mut value_struct = ValueStruct::new(
-                        // value.to_string(), 
-                        value,
-                        None, 
-                        None, 
-                    );
-
-                    if cmds.len() == 5 {
-                        let px = cmds[4].parse::<u128>()?;
-                        let now = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)?;
-                        let now_ms = now.as_millis() + px as u128;
-                        value_struct.set_px(Some(px));
-                        value_struct.set_pxat(Some(now_ms));
-                    }
-                    insert(key.to_string(), value_struct, kv_map.clone()).await;
+                    let out = set(&cmds, Arc::clone(&kv_map)).await?;
                     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                        client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
+                        client_tx.send((sock_addr, out.as_bytes().to_vec()))?;
                     }
-                    // {
-                    //     let mut slave_ack_set_gaurd = slave_ack_set.lock().await;
-                    //     slave_ack_set_gaurd.clear();
-                    // }
+
+                    // Below code to propagate commands to the replicas.
                     {
                         *command_init_for_replica.lock().await = true;
                     }
@@ -299,11 +257,19 @@ pub async fn read_handler(
                 } else if cmds[0].eq("XADD") {
                     
                 } else if cmds[0].eq("INCR") {
-                    incr_ops(
+                    let form = incr_ops(
                         &cmds, 
-                        sock_addr, 
-                        Arc::clone(&kv_map), 
-                        Arc::clone(&connections)).await?;
+                        Arc::clone(&kv_map)).await?;
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                    }
+                } else if cmds[0].eq("MULTI") {
+                    let form = multi(
+                        &cmds, 
+                        Arc::clone(&kv_map)).await?;
+                    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                    }
                 }
 
             },

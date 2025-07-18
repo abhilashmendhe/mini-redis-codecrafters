@@ -3,13 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::Mutex};
 
 use crate::{
-    connection_handling::SharedConnectionHashMapT, 
-    errors::RedisErrors, 
-    parse_redis_bytes_file::parse_multi_commands, 
-    rdb_persistence::rdb_persist::RDB, 
-    redis_key_value_struct::{SharedMapT, ValueStruct}, 
-    redis_server_info::ServerInfo, 
-    replication::{handle_master_client::master_reader_handle, replica_info::ReplicaInfo}
+    basics::{ all_types::SharedMapT, kv_ds::ValueStruct}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, parse_redis_bytes_file::parse_multi_commands, rdb_persistence::rdb_persist::RDB, redis_server_info::ServerInfo, replication::{handle_master_client::master_reader_handle, replica_info::ReplicaInfo}
 };
 
 

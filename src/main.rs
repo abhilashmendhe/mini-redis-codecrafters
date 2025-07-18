@@ -2,7 +2,6 @@
 
 mod errors;
 mod handle_client;
-mod redis_key_value_struct;
 mod rdb_persistence;
 mod redis_server_info;
 mod replication;
@@ -13,6 +12,8 @@ mod run_node;
 mod kv_lists;
 mod streams;
 mod transactions;
+mod basics;
+
 use crate::errors::RedisErrors;
 
 #[tokio::main]

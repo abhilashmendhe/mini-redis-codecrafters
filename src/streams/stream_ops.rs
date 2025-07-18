@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors, redis_key_value_struct::{SharedMapT, Value}};
+use crate::{basics::{ all_types::SharedMapT, kv_ds::Value}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors};
 
 
 pub async fn type_ops(

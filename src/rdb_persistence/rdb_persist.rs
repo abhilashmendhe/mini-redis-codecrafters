@@ -2,7 +2,7 @@ use std::{fs, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use crate::errors::RedisErrors;
+use crate::{basics::all_types::SharedRDBStructT, errors::RedisErrors};
 
 #[derive(Debug)]
 pub struct RDB {
@@ -10,7 +10,7 @@ pub struct RDB {
     rdb_filepath: String
 }
 
-type SharedRDBStructT = Arc<Mutex<RDB>>;
+
 
 pub fn init_rdb(args: &Vec<String>) -> Result<SharedRDBStructT, RedisErrors> {
     let mut dir_path = "".to_string();
