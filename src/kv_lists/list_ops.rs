@@ -1,4 +1,6 @@
-use std::{collections::VecDeque, net::SocketAddr};
+use std::{collections::VecDeque, net::SocketAddr, sync::{Arc}};
+
+use tokio::sync::{oneshot, Mutex};
 
 use crate::{
     connection_handling::SharedConnectionHashMapT, 
@@ -13,61 +15,74 @@ pub async fn push(
     sock_addr: SocketAddr,
     kv_map: SharedMapT,
     connections: SharedConnectionHashMapT,
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
 ) -> Result<(), RedisErrors> {
     let push_side = &cmds[0];
     let listkey = &cmds[1];
+    let mut list_len = 0;
     let value_struct = {
-        let mut kv_map_gaurd = kv_map.lock().await;
-
-        let value_struct = match kv_map_gaurd.get_mut(listkey) {
-            Some(value_struct) => {
-                match &mut value_struct.value {
-                    Value::STRING(_) => todo!(),
-                    Value::NUMBER(_) => todo!(),
-                    Value::LIST(list_items) => {
-                        for item in &cmds[2..] {
-                            if push_side.eq("RPUSH") {
-                                list_items.push_back(item.to_string());
-                            } else if push_side.eq("LPUSH") {
-                                list_items.push_front(item.to_string());
-                            }
+    let mut kv_map_gaurd = kv_map.lock().await;
+    
+    let value_struct = match kv_map_gaurd.get_mut(listkey) {
+        Some(value_struct) => {
+            match &mut value_struct.value {
+                Value::STRING(_) => todo!(),
+                Value::NUMBER(_) => todo!(),
+                Value::LIST(list_items) => {
+                    for item in &cmds[2..] {
+                        if push_side.eq("RPUSH") {
+                            list_items.push_back(item.to_string());
+                        } else if push_side.eq("LPUSH") {
+                            list_items.push_front(item.to_string());
                         }
-                    },
-                    Value::STREAM(_) => todo!(),
-                }
-                value_struct.to_owned()
-            },
-            None => {
-                let mut list_items = VecDeque::new();
-                
-                // items.push_back("haha".to_string());
-                for item in &cmds[2..] {
-                    if push_side.eq("RPUSH") {
-                        list_items.push_back(item.to_string());
-                    } else if push_side.eq("LPUSH") {
-                        list_items.push_front(item.to_string());
+                        list_len += 1;
                     }
+                    if let Some((sock_addr, waiter)) = blpop_clients_queue.lock().await.pop_front() {
+                        if let Some(item) = list_items.pop_front() {
+                            let _ = waiter.send((item, sock_addr));
+                        }
+                    }
+                },
+                Value::STREAM(_) => todo!(),
+            }
+            value_struct.to_owned()
+        },
+        None => {
+            let mut list_items = VecDeque::new();
+            
+            // items.push_back("haha".to_string());
+            for item in &cmds[2..] {
+                if push_side.eq("RPUSH") {
+                    list_items.push_back(item.to_string());
+                } else if push_side.eq("LPUSH") {
+                    list_items.push_front(item.to_string());
                 }
-                // println!("{:?}",list_items);
-                let value_struct = ValueStruct::new(
-                    Value::LIST(list_items),
-                    None, 
-                    None, 
-                );
-                // if cmds.len() == 5 {
-                //     let px = cmds[4].parse::<u128>()?;
-                //     let now = SystemTime::now()
-                //             .duration_since(UNIX_EPOCH)?;
-                //     let now_ms = now.as_millis() + px as u128;
-                //     value_struct.set_px(Some(px));
-                //     value_struct.set_pxat(Some(now_ms));
-                // }
-                value_struct
-            },
+                list_len += 1;
+            }
+            if let Some((sock_addr, waiter)) = blpop_clients_queue.lock().await.pop_front() {
+                if let Some(item) = list_items.pop_front() {
+                    let _ = waiter.send((item,sock_addr));
+                }
+            }
+            // println!("{:?}",list_items);
+            let value_struct = ValueStruct::new(
+                Value::LIST(list_items),
+                None, 
+                None, 
+            );
+            // if cmds.len() == 5 {
+            //     let px = cmds[4].parse::<u128>()?;
+            //     let now = SystemTime::now()
+            //             .duration_since(UNIX_EPOCH)?;
+            //     let now_ms = now.as_millis() + px as u128;
+            //     value_struct.set_px(Some(px));
+            //     value_struct.set_pxat(Some(now_ms));
+            // }
+            value_struct
+        },
         };
         value_struct
     };
-    let list_len = value_struct.value_len();
     insert(listkey.to_string(), value_struct, kv_map.clone()).await;
 
     if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {

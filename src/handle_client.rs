@@ -1,7 +1,7 @@
 
 use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc, time::{SystemTime, UNIX_EPOCH}};
 
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
 use crate::{connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{llen, lpop, lrange, push}, parse_redis_bytes_file::parse_recv_bytes, redis_key_value_struct::{get, insert, Value, ValueStruct}, redis_server_info::ServerInfo, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 use crate::rdb_persistence::rdb_persist::RDB;
@@ -16,7 +16,8 @@ pub async fn read_handler(
     replica_info: Arc<Mutex<ReplicaInfo>>,
     slave_ack_set: Arc<Mutex<HashSet<u16>>>,
     slave_ack_count: Arc<Mutex<usize>>,
-    notify: Arc<Notify>,    
+    notify_replica: Arc<Notify>,        
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>,
     command_init_for_replica: Arc<Mutex<bool>>,
     store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>
 ) -> Result<(), RedisErrors> {
@@ -30,7 +31,8 @@ pub async fn read_handler(
     println!("I am {}!. Accepted new connection from: {}", role,sock_addr);
     let mut buffer = [0u8; 1024];
     let connections1 = Arc::clone(&connections);
-
+    // blpop_clients_queue: Arc<Mutex<VecDeque<(u16,oneshot::Sender<String>)>>>
+    let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
     loop {
         match reader.read(&mut buffer).await {
             Ok(0) => {
@@ -141,9 +143,9 @@ pub async fn read_handler(
                         store_commands.lock().await.push_back(buffer[..n].to_vec());
                         // println!("{:?}", store_commands.lock().await);
                         let mut store_commands_gaurd = store_commands.lock().await;
-                        let vecdeque_len = store_commands_gaurd.len();
-                        // println!("vecdeque_len: {}", vecdeque_len);
-                        if vecdeque_len >= 3 {
+                        let store_commands_len = store_commands_gaurd.len();
+                        // println!("store_commands_len: {}", store_commands_len);
+                        if store_commands_len >= 3 {
                             while let Some(buffer) = store_commands_gaurd.pop_front() {
                                 let connections1 = Arc::clone(&connections);
                                 propagate_master_commands(
@@ -245,7 +247,7 @@ pub async fn read_handler(
                         {
                             *slave_ack_count.lock().await += 1;
                             if *slave_ack_count.lock().await >= slave_ack_set.lock().await.len() {
-                                notify.notify_waiters();
+                                notify_replica.notify_waiters();
                             }
                         }
                     }
@@ -284,13 +286,13 @@ pub async fn read_handler(
                     let conn_slaves = {
                         replica_info.lock().await.connected_slaves()
                     };
-                    let mut vecdequelen = 0;
+                    let mut store_commands_len = 0;
                     if conn_slaves > 0 {
                         // Propagate commands
-                        let vecduque_len = {
+                        let vecdeque_len = {
                             let mut store_commands_gaurd = store_commands.lock().await;
-                            let vecdeque_len = store_commands_gaurd.len();
-                            println!("vecdeque_len: {}", vecdeque_len);
+                            let store_commands_len = store_commands_gaurd.len();
+                            println!("store_commands_len: {}", store_commands_len);
                             while let Some(buffer) = store_commands_gaurd.pop_front() {
                                 let connections1 = Arc::clone(&connections);
                                 propagate_master_commands(
@@ -299,11 +301,11 @@ pub async fn read_handler(
                                     buffer
                                 ).await?;
                             }
-                            vecdeque_len
+                            store_commands_len
                         };
-                        vecdequelen = vecduque_len;
+                        store_commands_len = vecdeque_len;
                         // Propagate "REPLCONF GETACK *" to replicas     
-                        if vecduque_len > 0 {              
+                        if vecdeque_len > 0 {              
                             let connections1 = Arc::clone(&connections);
                             propagate_replconf_getack(sock_addr, connections1).await?;
                             // Sleep for the desired amount of time...
@@ -314,7 +316,7 @@ pub async fn read_handler(
                             );
                             let t2 = tokio::spawn({
                                 let count = slave_ack_count.clone();
-                                let notify = notify.clone();
+                                let notify_replica = notify_replica.clone();
                                 async move {
                                     loop {
                                         {
@@ -323,7 +325,7 @@ pub async fn read_handler(
                                                 return val;
                                             }
                                         }
-                                        notify.notified().await;
+                                        notify_replica.notified().await;
                                     }
                                 }
                             });
@@ -337,14 +339,14 @@ pub async fn read_handler(
                             }
                         }
                     };
-                        // vecdequelen = vecdeque_len;
+                        // store_commands_len = store_commands_len;
                     println!("\nDone sleeping for WAIT!");
 
                     // // Propagate "REPLCONF GETACK *" to replicas                   
                     // let connections1 = Arc::clone(&connections);
                     // propagate_replconf_getack(sock_addr, connections1).await?;
                     let mut reply_ack_slave_count = 0;
-                    if vecdequelen > 0 {
+                    if store_commands_len > 0 {
                         let replyackslavecount = {
                             while *slave_ack_count.lock().await <= 0 {}
                             println!("what");
@@ -392,7 +394,8 @@ pub async fn read_handler(
                     push(&cmds, 
                         sock_addr, 
                         Arc::clone(&kv_map), 
-                        Arc::clone(&connections1)
+                        Arc::clone(&connections1),
+                        Arc::clone(&blpop_clients_queue1)
                     ).await?;
                 } 
                 else if cmds[0].eq("LRANGE") {
@@ -411,15 +414,105 @@ pub async fn read_handler(
                         Arc::clone(&connections1)
                     ).await?;
                 } else if cmds[0].eq("LPOP") {
-                    
+
                     lpop(&cmds, 
                         sock_addr, 
                         Arc::clone(&kv_map), 
                         Arc::clone(&connections1)
                     ).await?;
+                } else if cmds[0].eq("BLPOP") {
+
+                    println!("In BLPOP");
+                    let listkey = cmds[1].to_string();
+                    let _seconds = cmds[2].parse::<u64>()?;
+                    
+                    let mut form = String::from("");
+                    
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let blpop_clients_queue2 = Arc::clone(&blpop_clients_queue1);
+                    
+                    {
+                        let mut kv_map_gaurd = kv_map.lock().await;
+                        if let Some(value_struct) = kv_map_gaurd.get_mut(&listkey) {
+                            // value_struct
+                            match value_struct.mut_value() {
+                                Value::STRING(_) => {},
+                                Value::NUMBER(_) => {},
+                                Value::LIST(items) => {
+                                    // println!("Items: {:?}", items);
+                                    if let Some(item) = items.pop_front() {
+                                        // let _ = waiter.send(item);
+                                        form.push_str("*2\r\n");
+                                        form.push('$');
+                                        form.push_str(&listkey.len().to_string());
+                                        form.push_str("\r\n");
+                                        form.push_str(&listkey);
+                                        form.push_str("\r\n");
+                                        form.push('$');
+                                        form.push_str(&item.len().to_string());
+                                        form.push_str("\r\n");
+                                        form.push_str(&item);
+                                        form.push_str("\r\n");
+                                        blpop_clients_queue2.lock().await.push_back((sock_addr, tx));
+                                    } else {
+                                        blpop_clients_queue2.lock().await.push_back((sock_addr, tx));
+                                    }
+                                },
+                                Value::STREAM(_) => {},
+                            }
+                        } else {
+                            blpop_clients_queue2.lock().await.push_back((sock_addr, tx));
+                        }
+                    }
+                    {
+                        println!("Before wait: {:?}",blpop_clients_queue2.lock().await);
+                    }
+                    println!("Before wait!");
+                    if form.len() <=0 {
+                         
+                        println!("Wating for the poppped elem"); 
+                        match rx.await {
+                            Ok((item, sock_addr)) => {
+                                
+                                form.push_str("*2\r\n");
+                                form.push('$');
+                                form.push_str(&listkey.len().to_string());
+                                form.push_str("\r\n");
+                                form.push_str(&listkey);
+                                form.push_str("\r\n");
+                                form.push('$');
+                                form.push_str(&item.len().to_string());
+                                form.push_str("\r\n");
+                                form.push_str(&item);
+                                form.push_str("\r\n");
+                                if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                                // println!("{}", form);
+                                    client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                                }
+                                form.clear();
+                                form.push_str("$-1\r\n");
+                            },
+                            Err(e) => {
+                                println!("recverr: {}",  e);
+                                form.push_str("$-1\r\n");
+                            }, // Sender dropped
+                        }
+                    } else 
+                    {
+                        println!("After wait: {:?}",blpop_clients_queue2.lock().await);
+                    }
+                    println!("After wait!");
+                    {
+                        let mut blpop_clients_queue2_gaurd = blpop_clients_queue2.lock().await;
+                        if let Some((sock_addr, _)) = blpop_clients_queue2_gaurd.pop_front() {
+                            if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                                println!("{}", form);
+                                client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                            }
+                        }
+                    }
+                    
                 }
-
-
 
             },
             Err(e) => {
@@ -439,10 +532,10 @@ pub async fn write_handler(
     // println!("Write handler!");
     while let Some(recv_bytes) = rx.recv().await {
         let (_sock_addr, reply_bytes) = recv_bytes; 
-        // println!("In write_handler - {}",_sock_addr);
+        println!("In write_handler - {}",_sock_addr);
         match writer.write_all(&reply_bytes).await {
             Ok(_) => {
-                // println!("Writing data back to client: {}", _sock_addr);
+                println!("Writing data back to client: {}", _sock_addr);
             },
             Err(e) => {
                 println!("Error in write_handler: {e}");

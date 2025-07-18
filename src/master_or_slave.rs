@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tokio::net::TcpListener;
 use tokio::signal;
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 
 // use crate::connection_handling::_periodic_ack_slave;
 use crate::connection_handling::{SharedConnectionHashMapT};
@@ -31,7 +31,8 @@ pub async fn run_master(
     let command_init_for_slave = Arc::new(Mutex::new(false));
     let store_commands: Arc<Mutex<VecDeque<Vec<u8>>>> = Arc::new(Mutex::new(VecDeque::new()));
     let slave_ack_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-    let notify = Arc::new(Notify::new());
+    let notify_replica = Arc::new(Notify::new());
+    let blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>> = Arc::new(Mutex::new(VecDeque::new()));
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -58,9 +59,10 @@ pub async fn run_master(
                         let connections1 = Arc::clone(&connections);
                         let slave_ack_set1 = Arc::clone(&slave_ack_set);
                         let slave_ack_count1 = Arc::clone(&slave_ack_count);
-                        let notify1 = Arc::clone(&notify);
+                        let notify_replica1 = Arc::clone(&notify_replica);
                         let command_init_for_replica1 = Arc::clone(&command_init_for_slave);
                         let store_commands1 = Arc::clone(&store_commands);
+                        let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
                             read_handler(
@@ -73,7 +75,9 @@ pub async fn run_master(
                                 replica_info1,
                                 slave_ack_set1,
                                 slave_ack_count1,
-                                notify1,
+                                notify_replica1,
+
+                                blpop_clients_queue1,
                                 command_init_for_replica1,
                                 store_commands1
                             ).await
