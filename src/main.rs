@@ -11,7 +11,8 @@ mod master_or_slave;
 mod parse_redis_bytes_file;
 mod run_node;
 mod kv_lists;
-
+mod streams;
+mod transactions;
 use crate::errors::RedisErrors;
 
 #[tokio::main]
