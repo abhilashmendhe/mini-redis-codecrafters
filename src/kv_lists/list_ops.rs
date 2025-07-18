@@ -241,3 +241,103 @@ pub async fn lpop(
     }
     Ok(())    
 }
+
+pub async fn blpop(
+    cmds: &Vec<String>,
+    sock_addr: SocketAddr,
+    kv_map: SharedMapT,
+    connections: SharedConnectionHashMapT,
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
+) -> Result<(), RedisErrors> {
+
+    println!("In BLPOP");
+    let listkey = cmds[1].to_string();
+    let _seconds = cmds[2].parse::<u64>()?;
+    
+    let mut form = String::from("");
+    
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let blpop_clients_queue2 = Arc::clone(&blpop_clients_queue);
+    
+    {
+        let mut kv_map_gaurd = kv_map.lock().await;
+        if let Some(value_struct) = kv_map_gaurd.get_mut(&listkey) {
+            // value_struct
+            match value_struct.mut_value() {
+                Value::STRING(_) => {},
+                Value::NUMBER(_) => {},
+                Value::LIST(items) => {
+                    // println!("Items: {:?}", items);
+                    if let Some(item) = items.pop_front() {
+                        // let _ = waiter.send(item);
+                        form.push_str("*2\r\n");
+                        form.push('$');
+                        form.push_str(&listkey.len().to_string());
+                        form.push_str("\r\n");
+                        form.push_str(&listkey);
+                        form.push_str("\r\n");
+                        form.push('$');
+                        form.push_str(&item.len().to_string());
+                        form.push_str("\r\n");
+                        form.push_str(&item);
+                        form.push_str("\r\n");
+                        blpop_clients_queue2.lock().await.push_back((sock_addr, tx));
+                    } else {
+                        blpop_clients_queue2.lock().await.push_back((sock_addr, tx));
+                    }
+                },
+                Value::STREAM(_) => {},
+            }
+        } else {
+            blpop_clients_queue2.lock().await.push_back((sock_addr, tx));
+        }
+    }
+    {
+        println!("Before wait: {:?}",blpop_clients_queue2.lock().await);
+    }
+    println!("Before wait!");
+    if form.len() <=0 {
+            
+        println!("Wating for the poppped elem"); 
+        match rx.await {
+            Ok((item, sock_addr)) => {
+                
+                form.push_str("*2\r\n");
+                form.push('$');
+                form.push_str(&listkey.len().to_string());
+                form.push_str("\r\n");
+                form.push_str(&listkey);
+                form.push_str("\r\n");
+                form.push('$');
+                form.push_str(&item.len().to_string());
+                form.push_str("\r\n");
+                form.push_str(&item);
+                form.push_str("\r\n");
+                if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                // println!("{}", form);
+                    client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+                }
+                form.clear();
+                form.push_str("$-1\r\n");
+            },
+            Err(e) => {
+                println!("recverr: {}",  e);
+                form.push_str("$-1\r\n");
+            }, // Sender dropped
+        }
+    } else 
+    // {
+    //     println!("After wait: {:?}",blpop_clients_queue2.lock().await);
+    // }
+    // println!("After wait!");
+    {
+        let mut blpop_clients_queue2_gaurd = blpop_clients_queue2.lock().await;
+        if let Some((sock_addr, _)) = blpop_clients_queue2_gaurd.pop_front() {
+            if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+                println!("{}", form);
+                client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
+            }
+        }
+    }
+    Ok(())
+}
