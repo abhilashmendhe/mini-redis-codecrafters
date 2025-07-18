@@ -1,4 +1,6 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
+
+use tokio::sync::{oneshot::{self, Sender}, Mutex};
 
 use crate::{errors::RedisErrors, redis_key_value_struct::{SharedMapT, Value}};
 
@@ -43,4 +45,49 @@ pub async fn compute_index(
         } else {
             Ok(v)
         }
+}
+
+pub async fn blpop_ops(
+    listkey: &String,
+    sock_addr: SocketAddr,
+    kv_map: SharedMapT,
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>,
+    tx: Sender<(String, SocketAddr)>
+) -> String {
+    
+    // Step 1:
+    let mut form = String::new();
+    let mut kv_map_gaurd = kv_map.lock().await;
+    if let Some(value_struct) = kv_map_gaurd.get_mut(listkey) {
+        // value_struct
+        match value_struct.mut_value() {
+            Value::STRING(_) => {},
+            Value::NUMBER(_) => {},
+            Value::LIST(items) => {
+                // println!("Items: {:?}", items);
+                if let Some(item) = items.pop_front() {
+                    // let _ = waiter.send(item);
+                    form.push_str("*2\r\n");
+                    form.push('$');
+                    form.push_str(&listkey.len().to_string());
+                    form.push_str("\r\n");
+                    form.push_str(&listkey);
+                    form.push_str("\r\n");
+                    form.push('$');
+                    form.push_str(&item.len().to_string());
+                    form.push_str("\r\n");
+                    form.push_str(&item);
+                    form.push_str("\r\n");
+                    blpop_clients_queue.lock().await.push_back((sock_addr, tx));
+                } else {
+                    blpop_clients_queue.lock().await.push_back((sock_addr, tx));
+                }
+            },
+            Value::STREAM(_) => {},
+        }
+    } else {
+        blpop_clients_queue.lock().await.push_back((sock_addr, tx));
+    }
+    
+    form
 }
