@@ -130,7 +130,7 @@ pub async fn discard_multi(
             if commands_transac.len() == 0 {
                 form.push_str("-ERR EXEC without MULTI\r\n");
             } else {
-                form.push_str("*0\r\n");
+                form.push_str("+OK\r\n");
                 commands_transac.clear();
             }
         }
