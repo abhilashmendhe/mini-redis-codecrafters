@@ -38,8 +38,6 @@ pub async fn set(
     kv_map: SharedMapT
 ) -> Result<String, RedisErrors> {
 
-    
-    
     // println!("cmds vec len: {}",cmds.len());
     let value = match value.parse::<i64>() {
         Ok(num) => Value::NUMBER(num),

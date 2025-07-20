@@ -23,9 +23,7 @@ pub async fn push(
     let value_struct = match kv_map_gaurd.get_mut(&list_key) {
         Some(value_struct) => {
             match &mut value_struct.value {
-                Value::STRING(_) => todo!(),
-                Value::NUMBER(_) => todo!(),
-                Value::LIST(list_items) => {
+               Value::LIST(list_items) => {
                     for item in values {
                         if push_side.eq("RPUSH") {
                             list_items.push_back(item.to_string());
@@ -47,7 +45,7 @@ pub async fn push(
                         }
                     };
                 },
-                Value::STREAM(_) => todo!(),
+                _ => todo!(),
             }
             value_struct.to_owned()
         },

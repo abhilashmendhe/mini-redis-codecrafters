@@ -1,16 +1,19 @@
 #![allow(unused)]
 
-use std::{collections::{HashMap, VecDeque}, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{collections::{HashMap, LinkedList, VecDeque}, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::sync::Mutex;
+
+use crate::streams::stream_struct::StreamStruct;
 
 #[derive(Debug, Clone)]
 pub enum Value {
     STRING(String),
     NUMBER(i64),
     LIST(VecDeque<String>),
-    STREAM(Vec<String>)
+    STREAM(LinkedList<StreamStruct>)
 }
+
 #[derive(Debug, Clone)]
 pub struct ValueStruct {
     pub value: Value,
@@ -40,7 +43,7 @@ impl ValueStruct {
             Value::STRING(s) => s.len(),
             Value::NUMBER(num) => num.to_string().len(),
             Value::LIST(items) => items.len(),
-            Value::STREAM(items) => items.len(),
+            Value::STREAM(stream_items) => stream_items.len(),
         }
     }
     pub fn set_px(&mut self, px: Option<u128>) {

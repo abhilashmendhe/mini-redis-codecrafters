@@ -1,18 +1,18 @@
 
-use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc};
+use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{basics::{basic_ops::{get, get_pattern_match_keys, set}, kv_ds::ValueStruct}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::type_ops, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
-use crate::rdb_persistence::rdb_persist::RDB;
+use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+
 use crate::transactions::commands::CommandTransactions;
 
 pub async fn read_handler(
     mut reader: tokio::net::tcp::OwnedReadHalf,
     sock_addr: SocketAddr,
     connections: SharedConnectionHashMapT,
-    kv_map: Arc<Mutex<HashMap<String, ValueStruct>>>,
-    rdb: Arc<Mutex<RDB>>,
+    kv_map: SharedMapT,
+    rdb: SharedRDBStructT,
     server_info: Arc<Mutex<ServerInfo>>,
     replica_info: Arc<Mutex<ReplicaInfo>>,
     slave_ack_set: Arc<Mutex<HashSet<u16>>>,
@@ -71,7 +71,6 @@ pub async fn read_handler(
                 while let Some((cmds, _end)) = try_parse_resp(&buffer).await {
                     buffer.clear();
 
-                    // println!("{:?}",cmds);
                     // send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     // tokio::time::sleep(Duration::from_secs(4)).await;
                     
@@ -278,8 +277,6 @@ pub async fn read_handler(
                         let form = type_ops(key.to_string(),  
                             Arc::clone(&kv_map)).await?;   
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
-                    } else if cmds[0].eq("XADD") {
-                        
                     } else if cmds[0].eq("INCR") {
 
                         let key = cmds[1].to_string();
@@ -319,6 +316,16 @@ pub async fn read_handler(
                             sock_addr,
                             Arc::clone(&connections1)).await?;
                         
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                    } else if cmds[0].eq("XADD") {
+                        // println!("{:?}",cmds);
+                        let stream_key = cmds[1].to_string();
+                        let stream_id = cmds[2].to_string();
+                        let pair_values = cmds[3..].to_vec();
+                        let form = xadd(stream_key, 
+                            stream_id, 
+                            pair_values,
+                        Arc::clone(&kv_map)).await?;
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {

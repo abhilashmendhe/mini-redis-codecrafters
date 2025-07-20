@@ -12,10 +12,8 @@ pub async fn fetch_list(
     let list_items = match kv_map_gaurd.get(listkey) {
         Some(value_struct) => {
             match &value_struct.value {
-                Value::STRING(_) => todo!(),
-                Value::NUMBER(_) => todo!(),
                 Value::LIST(items) => items.to_owned(),
-                Value::STREAM(_) => todo!(),
+                _ => todo!(),
             }
         },
         None => {
