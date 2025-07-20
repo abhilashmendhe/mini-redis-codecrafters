@@ -1,12 +1,13 @@
 use crate::{basics::{ all_types::SharedMapT, kv_ds::Value}, errors::RedisErrors};
 
 pub async fn type_ops(
-    cmds: &Vec<String>,
+    key: String,
     kv_map: SharedMapT
 ) -> Result<String, RedisErrors> {
+    
     let value_type_form = {
-    let key = &cmds[1];
-    if let Some(v) = kv_map.lock().await.get(key) {
+    
+    if let Some(v) = kv_map.lock().await.get(&key) {
             let value = v.value();
             let v_type = match value {
                 Value::STRING(_) => "+string\r\n",

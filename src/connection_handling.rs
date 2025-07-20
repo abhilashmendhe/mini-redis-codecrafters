@@ -2,7 +2,7 @@ use std::{collections::{HashMap, VecDeque}, net::SocketAddr, sync::Arc, time::Du
 
 use tokio::sync::{mpsc, Mutex};
 
-use crate::errors::RedisErrors;
+use crate::{errors::RedisErrors, transactions::commands::CommandTransactions};
 
 pub type ClientId = u16;
 // pub type SenderChannelT = mpsc::UnboundedSender<(SocketAddr, Vec<u8>)>;
@@ -12,7 +12,7 @@ pub type RecvChannelT = mpsc::UnboundedReceiver<(SocketAddr, Vec<u8>)>;
 pub struct ConnectionStruct {
     pub tx_sender: mpsc::UnboundedSender<(SocketAddr, Vec<u8>)>,
     pub flag: bool,
-    pub command_trans: VecDeque<String>,
+    pub command_trans: VecDeque<CommandTransactions>,
 }
 pub type SharedConnectionHashMapT = Arc<Mutex<HashMap<ClientId, ConnectionStruct>>>;
 
@@ -20,7 +20,7 @@ impl ConnectionStruct {
     pub fn new(
         tx_sender: mpsc::UnboundedSender<(SocketAddr, Vec<u8>)>,
         flag: bool,
-        command_trans: VecDeque<String>,
+        command_trans: VecDeque<CommandTransactions>,
     ) -> Self {
         Self {
             tx_sender,
@@ -28,13 +28,13 @@ impl ConnectionStruct {
             command_trans
         }
     }
-    pub fn set_commands_trans(&mut self, command_trans: VecDeque<String>) {
-        self.command_trans = command_trans;
-    }
-    pub fn mut_get_command_vec(&mut self) -> &mut VecDeque<String> {
+    // pub fn set_commands_trans(&mut self, command_trans: VecDeque<String>) {
+    //     self.command_trans = command_trans;
+    // }
+    pub fn mut_get_command_vec(&mut self) -> &mut VecDeque<CommandTransactions> {
         &mut self.command_trans
     }
-    pub fn get_command_vec(&self) -> &VecDeque<String> {
+    pub fn get_command_vec(&self) -> &VecDeque<CommandTransactions> {
         &self.command_trans
     }
 

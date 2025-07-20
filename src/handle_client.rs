@@ -3,8 +3,9 @@ use std::{collections::{HashMap, HashSet, VecDeque}, net::SocketAddr, sync::Arc}
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{basics::{basic_ops::{get, set}, kv_ds::ValueStruct}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::type_ops, transactions::transac_ops::{exec_multi, incr_ops, multi}};
+use crate::{basics::{basic_ops::{get, get_pattern_match_keys, set}, kv_ds::ValueStruct}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::type_ops, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 use crate::rdb_persistence::rdb_persist::RDB;
+use crate::transactions::commands::CommandTransactions;
 
 pub async fn read_handler(
     mut reader: tokio::net::tcp::OwnedReadHalf,
@@ -89,12 +90,37 @@ pub async fn read_handler(
                         println!("Bye received from replica: {}",sock_addr);
                         connections.lock().await.remove(&sock_addr.port());
                     } else if cmds[0] == String::from("GET") {
-
-                        let form = get(&cmds, kv_map.clone()).await;
+                        let key = cmds[1].to_string();
+                        let command_transc_len = get_command_trans_len(sock_addr, Arc::clone(&connections)).await;
+                        let form = if command_transc_len > 0 {
+                            let form = append_transaction_to_commands(CommandTransactions::Get { key }, 
+                                sock_addr, 
+                                Arc::clone(&connections)).await;
+                            form
+                        } else {
+                            let form = get(key, kv_map.clone()).await;
+                            form
+                        };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0] == String::from("SET") {
 
-                        let form = set(&cmds, Arc::clone(&kv_map)).await?;
+                        let key = cmds[1].to_string();
+                        let value = cmds[2].to_string();
+                        let px = if cmds.len() == 5 {
+                            Some(cmds[4].to_string())
+                        } else {
+                            None
+                        };
+                        let command_transc_len = get_command_trans_len(sock_addr, Arc::clone(&connections)).await;
+                        let form = if command_transc_len > 0 {
+                            let form = append_transaction_to_commands(CommandTransactions::Set { key, value, px }, 
+                                sock_addr, 
+                                Arc::clone(&connections)).await;
+                            form
+                        } else {
+                            let form = set(key, value, px, Arc::clone(&kv_map)).await?;
+                            form
+                        };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
 
                         // Below code to propagate commands to the replicas.
@@ -147,20 +173,12 @@ pub async fn read_handler(
 
                         }
                     } else if cmds[0] == String::from("KEYS") {
-                        if cmds[1] == String::from("*") {
-                            // Get all keys
-                            let map_gaurd = kv_map.lock().await;
-                            let mut count = 0;
-                            let mut key_str = String::new();
-                            for (key, _value_struct) in map_gaurd.iter() {
-                                key_str.push_str(format!("${}\r\n{}\r\n",key.len(),key).as_str());
-                                count += 1;
-                            }
-                            let mut full_str = format!("*{}\r\n",count);
-                            full_str.push_str(&key_str);
-                            // stream.write_all("+Everything\r\n".as_bytes()).await?;
-                            send_to_client(&connections, &sock_addr, full_str.as_bytes()).await?;
-                        }
+
+                        let pattern = cmds[1].to_string();
+                        let form = get_pattern_match_keys(pattern, 
+                                        Arc::clone(&kv_map)).await;
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                        
                     } else if cmds[0].eq("INFO") {
 
                         let mut form = String::new();
@@ -210,7 +228,12 @@ pub async fn read_handler(
 
                     } else if cmds[0].eq("RPUSH") || cmds[0].eq("LPUSH") {
 
-                        let form = push(&cmds,
+                        let push_side = cmds[0].to_string();
+                        let list_key = cmds[1].to_string();
+                        let values = cmds[2..].to_vec();
+                        let form = push(push_side,
+                            list_key,
+                            values,
                             Arc::clone(&kv_map), 
                             Arc::clone(&blpop_clients_queue1)
                         ).await?;
@@ -218,13 +241,19 @@ pub async fn read_handler(
                     } 
                     else if cmds[0].eq("LRANGE") {
 
-                        let form = lrange(&cmds, 
+                        let list_key = cmds[1].to_string();
+                        let start = cmds[2].to_string();
+                        let end = cmds[3].to_string();
+                        let form = lrange(list_key,
+                            start,
+                            end,
                             Arc::clone(&kv_map), 
                         ).await?;
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("LLEN") {
 
-                        let form = llen(&cmds, 
+                        let list_key = cmds[1].to_string();
+                        let form = llen(list_key, 
                             Arc::clone(&kv_map), 
                         ).await?;
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
@@ -245,37 +274,55 @@ pub async fn read_handler(
                         // send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("TYPE") {
 
-                        let form = type_ops(&cmds,  
+                        let key = &cmds[1];
+                        let form = type_ops(key.to_string(),  
                             Arc::clone(&kv_map)).await?;   
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("XADD") {
                         
                     } else if cmds[0].eq("INCR") {
 
-                        let form = incr_ops(
-                            &cmds, 
-                            Arc::clone(&kv_map)).await?;
+                        let key = cmds[1].to_string();
+                
+                        let command_transc_len = get_command_trans_len(sock_addr, Arc::clone(&connections)).await;
+                        let form = if command_transc_len > 0 {
+                            let form = append_transaction_to_commands(CommandTransactions::Incr { key }, 
+                                sock_addr, 
+                                Arc::clone(&connections)).await;
+                            form
+                        } else {
+                            
+                            let form = incr_ops(
+                                key,
+                                Arc::clone(&kv_map)).await?;
+                            form
+                        };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
-
                     } else if cmds[0].eq("MULTI") {
 
                         let form = multi(
-                            &cmds,
-                            sock_addr, 
-                            Arc::clone(&kv_map),
-                        Arc::clone(&connections1)).await?;
+                            sock_addr,
+                            Arc::clone(&connections1)).await?;
                         
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("EXEC") {
+
                         let form = exec_multi(
-                            &cmds,
-                            sock_addr, 
+                            sock_addr,
                             Arc::clone(&kv_map),
                             Arc::clone(&connections1)).await?;
                         
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?; 
+                    } else if cmds[0].eq("DISCARD") {
+                        
+                        let form = discard_multi(
+                            sock_addr,
+                            Arc::clone(&connections1)).await?;
+                        
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {
+
                         send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     }
                 

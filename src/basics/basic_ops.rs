@@ -32,12 +32,13 @@ pub async fn insert(key: String, value: ValueStruct, map: SharedMapT) {
 }
 
 pub async fn set(
-    cmds: &Vec<String>, 
+    key: String,
+    value: String,
+    px: Option<String>,
     kv_map: SharedMapT
 ) -> Result<String, RedisErrors> {
 
-    let key = cmds[1].as_str();
-    let value = cmds[2].as_str();
+    
     
     // println!("cmds vec len: {}",cmds.len());
     let value = match value.parse::<i64>() {
@@ -51,8 +52,8 @@ pub async fn set(
         None, 
     );
 
-    if cmds.len() == 5 {
-        let px = cmds[4].parse::<u128>()?;
+    if let Some(px) = px {
+        let px = px.parse::<u128>()?;
         let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)?;
         let now_ms = now.as_millis() + px as u128;
@@ -63,13 +64,11 @@ pub async fn set(
     Ok("+OK\r\n".to_string())
 }
 
-pub async fn get(cmds: &Vec<String>, kv_map: SharedMapT) -> String {
-
-    let key = &cmds[1];
+pub async fn get(key: String, kv_map: SharedMapT) -> String {
 
     let mut form = String::new();
     let mut m_gaurd = kv_map.lock().await;
-    let value = m_gaurd.get(key).cloned();
+    let value = m_gaurd.get(&key).cloned();
 
     if let Some(value_struct) = value {
         let now = SystemTime::now()
@@ -78,7 +77,7 @@ pub async fn get(cmds: &Vec<String>, kv_map: SharedMapT) -> String {
 
         if let Some(pxat) = value_struct.pxat() {
             if now.as_millis() > pxat {
-                m_gaurd.remove(key);
+                m_gaurd.remove(&key);
                 return "$-1\r\n".to_string();
             }
         }
@@ -109,4 +108,19 @@ pub async fn get(cmds: &Vec<String>, kv_map: SharedMapT) -> String {
     }
 }
 
+pub async fn get_pattern_match_keys(pattern: String, kv_map: SharedMapT) -> String {
 
+    let mut form = String::new();
+    if pattern.eq("*") {
+        let kv_map_gaurd = kv_map.lock().await;
+        let mut count = 0;
+        let mut key_str = String::new();
+        for (key, _value_struct) in kv_map_gaurd.iter() {
+            key_str.push_str(format!("${}\r\n{}\r\n",key.len(),key).as_str());
+            count += 1;
+        }
+        form = format!("*{}\r\n",count);
+        form.push_str(&key_str);
+    }
+    form
+}

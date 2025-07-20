@@ -8,23 +8,25 @@ use crate::{
 
 
 pub async fn push(
-    cmds: &Vec<String>,
+    // cmds: &Vec<String>,
+    push_side: String,
+    list_key: String,
+    values: Vec<String>,
     kv_map: SharedMapT,
     blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
 ) -> Result<String, RedisErrors> {
-    let push_side = &cmds[0];
-    let listkey = &cmds[1];
+
     let mut list_len = 0;
     let value_struct = {
     let mut kv_map_gaurd = kv_map.lock().await;
     
-    let value_struct = match kv_map_gaurd.get_mut(listkey) {
+    let value_struct = match kv_map_gaurd.get_mut(&list_key) {
         Some(value_struct) => {
             match &mut value_struct.value {
                 Value::STRING(_) => todo!(),
                 Value::NUMBER(_) => todo!(),
                 Value::LIST(list_items) => {
-                    for item in &cmds[2..] {
+                    for item in values {
                         if push_side.eq("RPUSH") {
                             list_items.push_back(item.to_string());
                         } else if push_side.eq("LPUSH") {
@@ -53,7 +55,7 @@ pub async fn push(
             let mut list_items = VecDeque::new();
             
             // items.push_back("haha".to_string());
-            for item in &cmds[2..] {
+            for item in values {
                 if push_side.eq("RPUSH") {
                     list_items.push_back(item.to_string());
                 } else if push_side.eq("LPUSH") {
@@ -92,7 +94,7 @@ pub async fn push(
         };
         value_struct
     };
-    insert(listkey.to_string(), value_struct, kv_map.clone()).await;
+    insert(list_key.to_string(), value_struct, kv_map.clone()).await;
     // let new_list_len = {
     //     if list_len > 
     // }
@@ -103,16 +105,18 @@ pub async fn push(
 
 
 pub async fn lrange(
-    cmds: &Vec<String>,
+    list_key: String,
+    start: String,
+    end: String,
     kv_map: SharedMapT,
 ) -> Result<String, RedisErrors> {
-    let listkey = &cmds[1];
-    let list_items = fetch_list(&listkey, kv_map).await;
+    // let listkey = &cmds[1];
+    let list_items = fetch_list(&list_key, kv_map).await;
     // println!("List itesm -> {:?}",&list_items);
 
     let list_len = list_items.len();
-    let start = compute_index(&cmds[2], list_len as i64).await?;
-    let stop = compute_index(&cmds[3], list_len as i64).await?;
+    let start = compute_index(&start, list_len as i64).await?;
+    let stop = compute_index(&end, list_len as i64).await?;
 
     // println!("Start : {}, and end : {}", start, stop);
     let mut form = String::new();
@@ -146,11 +150,11 @@ pub async fn lrange(
 }
 
 pub async fn llen(
-    cmds: &Vec<String>,
+    list_key: String,
     kv_map: SharedMapT,
 ) -> Result<String, RedisErrors> {
-    let listkey = &cmds[1];
-    let list_items = fetch_list(listkey, kv_map).await;
+
+    let list_items = fetch_list(&list_key, kv_map).await;
     let list_len = list_items.len();
     let form = format!(":{}\r\n",list_len);
     Ok(form)
