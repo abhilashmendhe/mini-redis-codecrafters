@@ -89,11 +89,17 @@ pub async fn exec_multi(
         let client_port = sock_addr.port();
         let mut connections_gaurd = connections.lock().await;
         if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
-            let commands_transac = conn_struct.get_command_vec();
+            let commands_transac = conn_struct.mut_get_command_vec();
+            println!("Lenth of command vec: {}",commands_transac.len());
+            println!("Command vec: {:?}", commands_transac);
             if commands_transac.len() == 0 {
                 form.push_str("-ERR EXEC without MULTI\r\n");
+            } else if commands_transac.len() == 1 {
+                form.push_str("*0\r\n");
+                commands_transac.clear();
             } else {
                 form.push_str("+OK\r\n");
+                commands_transac.clear();
             }
         }
     }
