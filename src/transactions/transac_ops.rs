@@ -85,8 +85,8 @@ pub async fn exec_multi(
         let mut connections_gaurd = connections.lock().await;
         if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
             let commands_transac = conn_struct.mut_get_command_vec();
-            println!("Lenth of command vec: {}",commands_transac.len());
-            println!("Command vec: {:?}", commands_transac);
+            // println!("Lenth of command vec: {}",commands_transac.len());
+            // println!("Command vec: {:?}", commands_transac);
             if commands_transac.len() == 0 {
                 form.push_str("-ERR EXEC without MULTI\r\n");
             } else if commands_transac.len() == 1 {
@@ -125,8 +125,8 @@ pub async fn discard_multi(
         let mut connections_gaurd = connections.lock().await;
         if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
             let commands_transac = conn_struct.mut_get_command_vec();
-            println!("Lenth of command vec: {}",commands_transac.len());
-            println!("Command vec: {:?}", commands_transac);
+            // println!("Lenth of command vec: {}",commands_transac.len());
+            // println!("Command vec: {:?}", commands_transac);
             if commands_transac.len() == 0 {
                 form.push_str("-ERR DISCARD without MULTI\r\n");
             } else {
