@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::{SystemTime, UNIX_EPOCH}};
+use std::{ collections::VecDeque, net::SocketAddr, time::{SystemTime, UNIX_EPOCH}};
 
 use crate::{basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors};
 
@@ -57,9 +57,46 @@ pub async fn incr_ops(
 
 pub async fn multi(
     cmds: &Vec<String>,
-    kv_map: SharedMapT,
+    sock_addr: SocketAddr,
+    _kv_map: SharedMapT,
+    connections: SharedConnectionHashMapT
 ) -> Result<String, RedisErrors> {
 
+    let key = &cmds[0];
+    {
+        let client_port = sock_addr.port();
+        let mut connections_gaurd = connections.lock().await;
+        if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
+            // conn_struct.command_trans.clone()
+            let commands_trans_vec = conn_struct.mut_get_command_vec();
+            commands_trans_vec.push_back(key.to_string());
+        }
+    }
+    
     let form = "+OK\r\n".to_string();
+    Ok(form)
+}
+
+pub async fn exec_multi(
+    cmds: &Vec<String>,
+    sock_addr: SocketAddr,
+    _kv_map: SharedMapT,
+    connections: SharedConnectionHashMapT
+) -> Result<String, RedisErrors> {
+    
+    let mut form = String::new();
+    {
+        let client_port = sock_addr.port();
+        let mut connections_gaurd = connections.lock().await;
+        if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
+            let commands_transac = conn_struct.get_command_vec();
+            if commands_transac.len() == 0 {
+                form.push_str("-ERR EXEC without MULTI\r\n");
+            } else {
+                form.push_str("+OK\r\n");
+            }
+        }
+    }
+
     Ok(form)
 }

@@ -41,7 +41,7 @@ pub async fn parse_multi_commands(buffer: &[u8]) ->Result<Vec<Vec<String>>, Redi
     Ok(multi_command_vec)
 }
 
-pub async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>{
+pub async fn _parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>{
     
     // 1. parse the first line that tells how many args were passed
     let mut ind = 0;
@@ -75,3 +75,50 @@ pub async fn parse_recv_bytes(buffer: &[u8]) -> Result<Vec<String>, RedisErrors>
     Ok(cmds)
 }
 
+
+pub async fn try_parse_resp(input: &[u8]) -> Option<(Vec<String>, usize)> {
+    let mut i = 0;
+    if input.get(i)? != &b'*' {
+        return None;
+    }
+    i += 1;
+
+    let (argc, advance) = parse_number(&input[i..]).await?;
+    i += advance + 2; // number + \r\n
+
+    let mut args = Vec::with_capacity(argc);
+
+    for _ in 0..argc {
+        if input.get(i)? != &b'$' {
+            return None;
+        }
+        i += 1;
+
+        let (len, advance) = parse_number(&input[i..]).await?;
+        i += advance + 2; // number + \r\n
+
+        let str_bytes = input.get(i..i + len)?;
+        let s = String::from_utf8(str_bytes.to_vec()).ok()?;
+        args.push(s);
+        i += len + 2; // string + \r\n
+    }
+
+    Some((args, i))
+}
+
+async fn parse_number(buf: &[u8]) -> Option<(usize, usize)> {
+    let mut num = 0;
+    let mut i = 0;
+    while i < buf.len() {
+        if buf[i] == b'\r' {
+            return Some((num, i));
+        }
+        if buf[i].is_ascii_digit() {
+            num = num * 10 + (buf[i] - b'0') as usize;
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    None
+}

@@ -3,17 +3,15 @@ use std::{collections::VecDeque, net::SocketAddr, sync::{Arc}};
 use tokio::{sync::{oneshot, Mutex}, time::timeout};
 
 use crate::{
-    basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, kv_lists::list_ops_utils::{blpop_ops, compute_index, fetch_list} 
+    basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, handle_client::send_to_client, kv_lists::list_ops_utils::{blpop_ops, compute_index, fetch_list} 
 };
 
 
 pub async fn push(
     cmds: &Vec<String>,
-    sock_addr: SocketAddr,
     kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT,
     blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
-) -> Result<(), RedisErrors> {
+) -> Result<String, RedisErrors> {
     let push_side = &cmds[0];
     let listkey = &cmds[1];
     let mut list_len = 0;
@@ -98,20 +96,16 @@ pub async fn push(
     // let new_list_len = {
     //     if list_len > 
     // }
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-        let form = format!(":{}\r\n",list_len);
-        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-    }
-    Ok(())
+    
+    let form = format!(":{}\r\n",list_len);
+    Ok(form)
 }
 
 
 pub async fn lrange(
     cmds: &Vec<String>,
-    sock_addr: SocketAddr,
     kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT
-) -> Result<(), RedisErrors> {
+) -> Result<String, RedisErrors> {
     let listkey = &cmds[1];
     let list_items = fetch_list(&listkey, kv_map).await;
     // println!("List itesm -> {:?}",&list_items);
@@ -147,35 +141,25 @@ pub async fn lrange(
         }
         form.push_str(&format!("*{}\r\n{}", count, repl_str));
     }
-    // println!("{}",form);
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-    }
-    Ok(())
+
+    Ok(form)
 }
 
 pub async fn llen(
     cmds: &Vec<String>,
-    sock_addr: SocketAddr,
     kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT
-) -> Result<(), RedisErrors> {
+) -> Result<String, RedisErrors> {
     let listkey = &cmds[1];
     let list_items = fetch_list(listkey, kv_map).await;
     let list_len = list_items.len();
     let form = format!(":{}\r\n",list_len);
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-    }
-    Ok(())
+    Ok(form)
 }
 
 pub async fn lpop(
     cmds: &Vec<String>,
-    sock_addr: SocketAddr,
-    kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT
-) -> Result<(), RedisErrors> {
+    kv_map: SharedMapT
+) -> Result<String, RedisErrors> {
 
     let listkey = &cmds[1];
     let mut num_items = 0;
@@ -233,10 +217,7 @@ pub async fn lpop(
             },
         }
     }
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-    }
-    Ok(())    
+    Ok(form)    
 }
 
 pub async fn blpop(
@@ -246,7 +227,7 @@ pub async fn blpop(
     connections: SharedConnectionHashMapT,
     blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
 ) -> Result<(), RedisErrors> {
-    println!("In BLPOP");
+    
     let listkey = cmds[1].to_string();
     let f_secs = cmds[2].parse::<f64>()?;
     let seconds = (f_secs * 1000.0) as u64;
@@ -283,10 +264,8 @@ pub async fn blpop(
                 form.push_str("\r\n");
                 form.push_str(&item);
                 form.push_str("\r\n");
-                if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                // println!("{}", form);
-                    client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-                }
+                
+                send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                 form.clear();
                 form.push_str("$-1\r\n");
                 Some(item)
@@ -303,9 +282,7 @@ pub async fn blpop(
                 {
                     let mut blpop_clients_queue2_gaurd = blpop_clients_queue.lock().await;
                     if let Some((sock_addr, _)) = blpop_clients_queue2_gaurd.pop_front() {
-                        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                            client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-                        }
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                 }
                 None
@@ -354,10 +331,8 @@ pub async fn no_timeout_blpop(
                 form.push_str("\r\n");
                 form.push_str(&item);
                 form.push_str("\r\n");
-                if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                // println!("{}", form);
-                    client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-                }
+                
+                send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                 form.clear();
                 form.push_str("$-1\r\n");
             },
@@ -374,10 +349,7 @@ pub async fn no_timeout_blpop(
     {
         let mut blpop_clients_queue2_gaurd = blpop_clients_queue2.lock().await;
         if let Some((sock_addr, _)) = blpop_clients_queue2_gaurd.pop_front() {
-            if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-                println!("{}", form);
-                client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-            }
+            send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
         }
     }
     Ok(())

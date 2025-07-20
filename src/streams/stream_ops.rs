@@ -1,15 +1,10 @@
-use std::net::SocketAddr;
-
-use crate::{basics::{ all_types::SharedMapT, kv_ds::Value}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors};
-
+use crate::{basics::{ all_types::SharedMapT, kv_ds::Value}, errors::RedisErrors};
 
 pub async fn type_ops(
     cmds: &Vec<String>,
-    sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT,
     kv_map: SharedMapT
-) -> Result<(), RedisErrors> {
-    let v_type = {
+) -> Result<String, RedisErrors> {
+    let value_type_form = {
     let key = &cmds[1];
     if let Some(v) = kv_map.lock().await.get(key) {
             let value = v.value();
@@ -25,9 +20,5 @@ pub async fn type_ops(
         }
     };
 
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-        let form = format!("{}",v_type);
-        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
-    }
-    Ok(())
+    Ok(value_type_form.to_string())
 }

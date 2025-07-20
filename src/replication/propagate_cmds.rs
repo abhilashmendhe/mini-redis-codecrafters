@@ -16,11 +16,12 @@ pub async fn propagate_master_commands(
 
     {
         let mut conn_gaurd = connections.lock().await;
-        for (_k, (_tx, _flag)) in conn_gaurd.iter_mut() {
-            
-            if *_flag {
+        for (_k, conn_struct) in conn_gaurd.iter_mut() {
+            let _flag = conn_struct.flag;
+            let _client_tx = conn_struct.tx_sender.clone();
+            if _flag {
                 println!("key: {}, flag: {}", _k, _flag);
-                _tx.send((sock_addr, buffer.clone()))?;
+                _client_tx.send((sock_addr, buffer.clone()))?;
             } 
         }
     }
@@ -34,10 +35,11 @@ pub async fn propagate_replconf_getack(
 
     {
         let mut conn_gaurd = connections.lock().await;
-        for (_k, (_tx, _flag)) in conn_gaurd.iter_mut() {
-            
-            if *_flag {
-                _tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
+        for (_k, conn_struct) in conn_gaurd.iter_mut() {
+            let _flag = conn_struct.flag;
+            let _client_tx = conn_struct.tx_sender.clone();
+            if _flag {
+                _client_tx.send((sock_addr, b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n".to_vec()))?;
             } 
         }
     }

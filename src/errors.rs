@@ -14,6 +14,9 @@ pub enum RedisErrors {
     #[error("ParseFloatError: {}", 0)]
     ParseFloat(#[from] std::num::ParseFloatError),
 
+    #[error("Utf8Error: {}", 0)]
+    Utf8Error(#[from] std::str::Utf8Error),
+
     #[error("SystemTimeError: {}", 0)]
     SystemTimeError(#[from] std::time::SystemTimeError),
 

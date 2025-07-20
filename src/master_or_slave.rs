@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 
 use crate::basics::kv_ds::ValueStruct;
 // use crate::connection_handling::_periodic_ack_slave;
-use crate::connection_handling::{SharedConnectionHashMapT};
+use crate::connection_handling::{ConnectionStruct, SharedConnectionHashMapT};
 use crate::errors::RedisErrors;
 use crate::handle_client::{read_handler, write_handler};
 use crate::rdb_persistence::rdb_persist::RDB;
@@ -33,6 +33,7 @@ pub async fn run_master(
     let slave_ack_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let notify_replica = Arc::new(Notify::new());
     let blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>> = Arc::new(Mutex::new(VecDeque::new()));
+    // let multi_command_map = Arc::new(Mutex::new(HashMap::new()));
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -44,8 +45,9 @@ pub async fn run_master(
                         
                         // insert client info to the HashMap
                         {
+                            let conn_struct = ConnectionStruct::new(tx.clone(), false, VecDeque::new());
                             let mut conns = connections.lock().await;
-                            conns.insert(sock_addr.port(), (tx.clone(), false));
+                            conns.insert(sock_addr.port(), conn_struct);
                         }
 
                         // split the stream
@@ -63,6 +65,7 @@ pub async fn run_master(
                         let command_init_for_replica1 = Arc::clone(&command_init_for_slave);
                         let store_commands1 = Arc::clone(&store_commands);
                         let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
+                        // let multi_command_map1 = Arc::clone(&multi_command_map);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
                             read_handler(
@@ -76,10 +79,10 @@ pub async fn run_master(
                                 slave_ack_set1,
                                 slave_ack_count1,
                                 notify_replica1,
-
                                 blpop_clients_queue1,
                                 command_init_for_replica1,
-                                store_commands1
+                                store_commands1,
+                                // multi_command_map1
                             ).await
                         });
 

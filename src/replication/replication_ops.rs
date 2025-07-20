@@ -2,7 +2,7 @@ use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::sync::{Mutex, Notify};
 
-use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
+use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors, handle_client::send_to_client, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
 
 pub async fn replconf_ops(
     cmds: &Vec<String>,
@@ -20,15 +20,16 @@ pub async fn replconf_ops(
         let _ip = sock_addr.ip().to_string();
         
         replica_info.lock().await.add_slave(_ip, _port);
-        if let Some((client_tx, _flag)) = connections.lock().await.get_mut(&sock_addr.port()) {
-            *_flag = true;
+        if let Some(conn_struct) = connections.lock().await.get_mut(&sock_addr.port()) {
+            conn_struct.flag = true;
+            let client_tx = conn_struct.tx_sender.clone();
+            // *_flag = true;
             client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
         }
     } else if cmds[1].eq("capa") {
         println!("Received 3nd handshake for Replconf psync!");
-        if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
-            client_tx.send((sock_addr, b"+OK\r\n".to_vec()))?;
-        }
+        send_to_client(&connections, &sock_addr, b"OK\r\n").await?;
+        
     } else if cmds[1].eq("ACK") {
         // println!("Received ACK from replica!");
         // println!("Store reply here...");
@@ -62,13 +63,14 @@ pub async fn psync_ops(
         .collect::<Vec<_>>();
 
     let header = format!("${}\r\n", contents.len());
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+    if let Some(conn_struct) = connections.lock().await.get(&sock_addr.port()) {
         let mut vv = b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec();
         vv.extend_from_slice(header.as_bytes());
         vv.extend_from_slice(&contents);
         // ##############################
         // vv.extend_from_slice(b"*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n");
         // ##############################
+        let client_tx = conn_struct.tx_sender.clone();
         client_tx.send((sock_addr, vv))?;
     }
     {
@@ -161,7 +163,7 @@ pub async fn wait_repl(
         reply_ack_slave_count = replyackslavecount;
     }
     println!("Reply slave count: {}",reply_ack_slave_count);
-    if let Some((client_tx, _flag)) = connections.lock().await.get(&sock_addr.port()) {
+    if let Some(conn_struct) = connections.lock().await.get(&sock_addr.port()) {
         let connected_slaves = {
             if *command_init_for_replica.lock().await {
                 reply_ack_slave_count
@@ -171,6 +173,7 @@ pub async fn wait_repl(
         };
         
         let form = format!(":{}\r\n", connected_slaves);
+        let client_tx = conn_struct.tx_sender.clone();
         client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
     }
     {   *slave_ack_count.lock().await = 0;   }
