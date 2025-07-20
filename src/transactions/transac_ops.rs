@@ -128,7 +128,7 @@ pub async fn discard_multi(
             println!("Lenth of command vec: {}",commands_transac.len());
             println!("Command vec: {:?}", commands_transac);
             if commands_transac.len() == 0 {
-                form.push_str("-ERR EXEC without MULTI\r\n");
+                form.push_str("-ERR DISCARD without MULTI\r\n");
             } else {
                 form.push_str("+OK\r\n");
                 commands_transac.clear();
