@@ -93,6 +93,10 @@ pub async fn extract_stream_id(
     if stream_id.eq("*") {
         let epoch = get_current_unix_time().await?;
         Ok((epoch, 0))
+    } else if stream_id.eq("-") {
+        Ok((0, 0))
+    } else if stream_id.eq("+") {
+        Ok((0, -5))
     } else {
 
         let mut id_spl = stream_id.split("-");

@@ -100,15 +100,17 @@ pub async fn xrange(
     start_id: String,
     end_id: String,
     kv_map: SharedMapT
-) -> Result<String, RedisErrors> {
+) -> Result<String, RedisErrors> {  
 
     let (s_epoch, s_seq_num) = extract_stream_id(start_id).await?;
     let (e_epoch, e_seq_num) = extract_stream_id(end_id).await?;
+    
     let mut form = String::new();
     {
         let kv_map_gaurd = kv_map.lock().await;
         if let Some(vs) = kv_map_gaurd.get(&stream_key) {
             if let Value::STREAM(stream_list) = vs.value() {
+
                 let mut count = 0;
                 let mut temp_form = String::new();
                 for ss in stream_list {
@@ -130,8 +132,10 @@ pub async fn xrange(
                 form.push_str(&format!("*{}\r\n",count));
                 form.push_str(&temp_form);
             }
+        } else {
+            form.push_str("$-1\r\n");
         }
     }
-    println!("form:\n{}",form);
+    // println!("form:\n{}",form);
     Ok(form)
 }
