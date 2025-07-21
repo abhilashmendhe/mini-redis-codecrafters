@@ -76,7 +76,13 @@ pub async fn xadd(
             std::mem::drop(kv_map_gaurd);
             let mut stream_list = LinkedList::new();
             let new_seq_num = if seq_num < 0 { 0 as usize } else { seq_num as usize };
-            let new_seq_num = if epoch == 0 { 1 } else { new_seq_num };
+            let new_seq_num = if epoch == 0 { 
+                if new_seq_num > 0 {
+                    new_seq_num
+                } else {
+                    1
+                }
+             } else { new_seq_num };
 
             let stream_struct = StreamStruct::new(epoch, new_seq_num, pair_values);
             stream_list.push_back(stream_struct);
@@ -102,14 +108,28 @@ pub async fn xrange(
     kv_map: SharedMapT
 ) -> Result<String, RedisErrors> {  
 
-    let (s_epoch, s_seq_num) = extract_stream_id(start_id).await?;
-    let (e_epoch, e_seq_num) = extract_stream_id(end_id).await?;
-    
+    let (s_epoch, mut s_seq_num) = extract_stream_id(start_id).await?;
+    let (mut e_epoch, mut e_seq_num) = extract_stream_id(end_id).await?;
+    // println!("s_epoch: {}, s_seq: {}", s_epoch, s_seq_num);
+    // println!("e_epoch: {}, e_seq: {}", e_epoch, e_seq_num);
+
     let mut form = String::new();
     {
         let kv_map_gaurd = kv_map.lock().await;
         if let Some(vs) = kv_map_gaurd.get(&stream_key) {
             if let Value::STREAM(stream_list) = vs.value() {
+
+                {
+                    if let Some(back_stream_list) = stream_list.back() {
+                        if e_seq_num < 0 {
+                            e_epoch = back_stream_list.epoch;
+                            e_seq_num = back_stream_list.seq_number as isize;
+                        }
+                    }
+                    if s_seq_num < 0 {
+                        s_seq_num = 0;
+                    }
+                }
 
                 let mut count = 0;
                 let mut temp_form = String::new();
@@ -122,7 +142,7 @@ pub async fn xrange(
                             temp_form.push_str(&ss.to_string());
                         } else {
                             if s_seq_num as usize <= ss.seq_number && e_seq_num as usize >= ss.seq_number {
-                                // println!("Check seq_num: {}",ss);
+                                // println!("Check seq_num: {}",ss);    
                                 count += 1;
                                 temp_form.push_str(&ss.to_string());
                             }
@@ -137,5 +157,62 @@ pub async fn xrange(
         }
     }
     // println!("form:\n{}",form);
+    Ok(form)
+}
+
+pub async fn xread(
+    streams_ids: &Vec<String>,
+    kv_map: SharedMapT
+) -> Result<String, RedisErrors> { 
+
+    let mut form = String::new();
+    
+    let st_ids_size = streams_ids.len();
+    let mut ind = 0;
+    let mid = st_ids_size / 2;
+    // println!("{:?}",streams_ids);
+    form.push_str(&format!("*{}\r\n",mid));
+    while ind < mid {
+        // println!("ind: {}, mid: {}",ind, mid+ind);
+        let stream_key = &streams_ids[ind];
+        let stream_id = &streams_ids[ind+mid];
+        // println!("stream_key: {}, stream_id: {}", stream_key, stream_id);
+        let (epoch, seq_num) = extract_stream_id(stream_id.to_string()).await?;
+        
+        {
+            let kv_map_gaurd = kv_map.lock().await;
+            if let Some(vs) = kv_map_gaurd.get(stream_key) {
+                // println!("Found: {}",stream_key);
+                let mut c2 = 0;
+                let mut temp2 = String::new();
+                form.push_str("*2\r\n");
+                form.push_str(&format!("${}\r\n{}\r\n",stream_key.len().to_string(), stream_key));
+                if let Value::STREAM(stream_list) = vs.value() {
+                    for ss in stream_list {
+                        // if epoch == ss.epoch && seq_num as usize > ss.seq_number {
+                        //     println!("{}", ss);
+                        // }
+                        if epoch == ss.epoch {
+                            if ss.seq_number > seq_num as usize {
+                                // println!("{}",ss);
+                                c2 += 1;
+                                temp2.push_str(&ss.to_string());
+                            }
+                        } else if ss.epoch > epoch {
+                            // println!("{}",ss);
+                            c2 += 1;
+                            temp2.push_str(&ss.to_string());
+                        }
+                    }
+                }
+                form.push_str(&format!("*{}\r\n", c2));
+                form.push_str(&temp2);
+            }
+        }
+        // println!();
+        ind += 1;
+    }
+    // println!("\n");
+    // form.push_str("+OK\r\n");
     Ok(form)
 }
