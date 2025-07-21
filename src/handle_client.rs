@@ -3,7 +3,7 @@ use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd, xrange}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 
 use crate::transactions::commands::CommandTransactions;
 
@@ -318,7 +318,7 @@ pub async fn read_handler(
                         
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("XADD") {
-                        // println!("{:?}",cmds);
+
                         let stream_key = cmds[1].to_string();
                         let stream_id = cmds[2].to_string();
                         let pair_values = cmds[3..].to_vec();
@@ -326,7 +326,18 @@ pub async fn read_handler(
                             stream_id, 
                             pair_values,
                         Arc::clone(&kv_map)).await?;
-                        println!("form in handle:{}",form);
+                        
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                    } else if cmds[0].eq("XRANGE") {
+                        
+                        let stream_key = cmds[1].to_string();
+                        let start = cmds[2].to_string();
+                        let end = cmds[3].to_string();
+                        let form = xrange(stream_key, 
+                            start,
+                            end,
+                            Arc::clone(&kv_map)).await?;
+                        
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {
