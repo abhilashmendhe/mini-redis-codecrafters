@@ -97,8 +97,7 @@ pub async fn get(key: String, kv_map: SharedMapT) -> String {
                 form.push_str(&num_str);
                 form.push_str("\r\n");
             },
-            Value::LIST(_) => {},
-            Value::STREAM(_) => {}, 
+            _ => {}
         }
         form
     } else {

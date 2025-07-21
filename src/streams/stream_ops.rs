@@ -1,6 +1,6 @@
-use std::collections::{LinkedList, VecDeque};
+use std::collections::LinkedList;
 
-use crate::{basics::{ all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, errors::RedisErrors, streams::stream_struct::{get_stream_value, StreamStruct}};
+use crate::{basics::{ all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, errors::RedisErrors, streams::stream_struct::{extract_stream_data, extract_stream_id, StreamStruct}};
 
 pub async fn type_ops(
     key: String,
@@ -33,57 +33,63 @@ pub async fn xadd(
     kv_map: SharedMapT
 ) -> Result<String, RedisErrors> {
     
-    if stream_id.eq("0-0") {
+    let mut form = String::new();
+    let (epoch, seq_num) = extract_stream_id(stream_id).await?;
+    if epoch == 0 && seq_num == 0 {
         return Ok(String::from("-ERR The ID specified in XADD must be greater than 0-0\r\n"));
     }
     
-    let form = format!("${}\r\n{}\r\n", stream_id.len(), stream_id);
-    let mut i = 0;
-    let mut pairs_values = VecDeque::new();
+    let pair_values = extract_stream_data(pair_values_vec).await;
 
-    while i < pair_values_vec.len() {
-        let k = pair_values_vec[i].to_string();
-        let v = get_stream_value(&pair_values_vec[i+1]).await;
-        pairs_values.push_back((k, v));
-        i += 2;
-    }
-
-    
+    let mut sid = String::new();
     {
         let mut kv_map_gaurd = kv_map.lock().await;
         if let Some(value_struct) = kv_map_gaurd.get_mut(&stream_key) {
             
-            if let Value::STREAM(stream_items) = value_struct.mut_value() {
-                if let Some(stream_struct) = stream_items.back() {
-                    // strea
-                    let milli_sec_time = stream_struct.id.milli_sec_time;
-                    let seq_number = stream_struct.id.seq_number;
+            if let Value::STREAM(stream_list) = value_struct.mut_value() {
+                if let Some(stream_struct) = stream_list.back() {
+                    let last_epoch = stream_struct.epoch;
+                    let last_seq_num = stream_struct.seq_number;
                     
-                    let new_stream_struct = StreamStruct::new(stream_id, pairs_values)?;
-                    let new_milli_sec_time = new_stream_struct.id.milli_sec_time;
-                    let new_seq_number = new_stream_struct.id.seq_number;
-
-                    if new_milli_sec_time < milli_sec_time {
+                    if epoch < last_epoch {
                         return Ok(String::from("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"));
-                    } else {
-                        if new_seq_number <= seq_number {
+                    }
+
+                    let new_seq_num = {
+                        if epoch == last_epoch { 
+                            if seq_num < 0 { last_seq_num + 1 } else { seq_num as usize }
+                        } else { 0 }
+                    }; 
+                    
+                    if epoch == last_epoch {
+                        if new_seq_num <= last_seq_num {
                             return Ok(String::from("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"));
                         }
                     }
-                    stream_items.push_back(new_stream_struct);
+                    let stream_struct = StreamStruct::new(epoch, new_seq_num, pair_values);
+                    stream_list.push_back(stream_struct);
+                    sid = format!("{}-{}", epoch, new_seq_num);
                 }
             }
 
         } else {
             std::mem::drop(kv_map_gaurd);
-            let mut stream_linked_list = LinkedList::new();
-            let stream_struct = StreamStruct::new(stream_id, pairs_values)?;
-            stream_linked_list.push_back(stream_struct);
-            let kv_value = Value::STREAM(stream_linked_list);
-            let value_struct = ValueStruct::new(kv_value, None, None);
-            // println!("{:?}",value_struct.clone());
-            insert(stream_key, value_struct, kv_map.clone()).await;   
+            let mut stream_list = LinkedList::new();
+            let new_seq_num = if seq_num < 0 { 0 as usize } else { seq_num as usize };
+            let new_seq_num = if epoch == 0 { 1 } else { new_seq_num };
+
+            let stream_struct = StreamStruct::new(epoch, new_seq_num, pair_values);
+            stream_list.push_back(stream_struct);
+            sid = format!("{}-{}", epoch, new_seq_num);
+            let stream_value = Value::STREAM(stream_list);
+            let value_struct = ValueStruct::new(stream_value, None, None);
+            insert(stream_key, value_struct, kv_map.clone()).await;    
         }
     }
+    form.push('$');
+    form.push_str(&sid.len().to_string());
+    form.push_str("\r\n");
+    form.push_str(&sid);
+    form.push_str("\r\n");
     Ok(form)
 }

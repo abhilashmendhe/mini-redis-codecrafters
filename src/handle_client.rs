@@ -326,6 +326,7 @@ pub async fn read_handler(
                             stream_id, 
                             pair_values,
                         Arc::clone(&kv_map)).await?;
+                        println!("form in handle:{}",form);
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {

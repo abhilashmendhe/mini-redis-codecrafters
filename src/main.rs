@@ -1,20 +1,4 @@
-// #![allow(unused)]
-
-mod errors;
-mod handle_client;
-mod rdb_persistence;
-mod redis_server_info;
-mod replication;
-mod connection_handling;
-mod master_or_slave;
-mod parse_redis_bytes_file;
-mod run_node;
-mod kv_lists;
-mod streams;
-mod transactions;
-mod basics;
-
-use crate::errors::RedisErrors;
+use codecrafters_redis::{errors::RedisErrors, run_node};
 
 #[tokio::main]
 async fn main() -> Result<(), RedisErrors> {
