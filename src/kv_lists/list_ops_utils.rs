@@ -58,12 +58,8 @@ pub async fn blpop_ops(
     let mut kv_map_gaurd = kv_map.lock().await;
     if let Some(value_struct) = kv_map_gaurd.get_mut(listkey) {
         // value_struct
-        match value_struct.mut_value() {
-            Value::STRING(_) => {},
-            Value::NUMBER(_) => {},
-            Value::LIST(items) => {
-                // println!("Items: {:?}", items);
-                if let Some(item) = items.pop_front() {
+        if let Value::LIST(items) = value_struct.mut_value() {
+            if let Some(item) = items.pop_front() {
                     // let _ = waiter.send(item);
                     form.push_str("*2\r\n");
                     form.push('$');
@@ -80,8 +76,6 @@ pub async fn blpop_ops(
                 } else {
                     blpop_clients_queue.lock().await.push_back((sock_addr, tx));
                 }
-            },
-            Value::STREAM(_) => {},
         }
     } else {
         blpop_clients_queue.lock().await.push_back((sock_addr, tx));

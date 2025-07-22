@@ -34,6 +34,7 @@ pub async fn run_master(
     let notify_replica = Arc::new(Notify::new());
     let blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>> = Arc::new(Mutex::new(VecDeque::new()));
     // let multi_command_map = Arc::new(Mutex::new(HashMap::new()));
+    let xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>> = Arc::new(Mutex::new(VecDeque::new()));
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -65,6 +66,7 @@ pub async fn run_master(
                         let command_init_for_replica1 = Arc::clone(&command_init_for_slave);
                         let store_commands1 = Arc::clone(&store_commands);
                         let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
+                        let xread_clients_queue1 = Arc::clone(&xread_clients_queue);
                         // let multi_command_map1 = Arc::clone(&multi_command_map);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
@@ -82,6 +84,7 @@ pub async fn run_master(
                                 blpop_clients_queue1,
                                 command_init_for_replica1,
                                 store_commands1,
+                                xread_clients_queue1
                                 // multi_command_map1
                             ).await
                         });

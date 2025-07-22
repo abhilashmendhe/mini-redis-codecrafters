@@ -1,6 +1,7 @@
-use std::collections::LinkedList;
+use std::{collections::LinkedList};
 
-use crate::{basics::{ all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, errors::RedisErrors, streams::stream_struct::{extract_stream_data, extract_stream_id, StreamStruct}};
+
+use crate::{basics::{ all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, errors::RedisErrors, streams::{stream_struct::StreamStruct, stream_utils::{extract_stream_data, extract_stream_id, extract_stream_read_data, extract_stream_read_data_block}}};
 
 pub async fn type_ops(
     key: String,
@@ -165,54 +166,55 @@ pub async fn xread(
     kv_map: SharedMapT
 ) -> Result<String, RedisErrors> { 
 
-    let mut form = String::new();
-    
-    let st_ids_size = streams_ids.len();
-    let mut ind = 0;
-    let mid = st_ids_size / 2;
     // println!("{:?}",streams_ids);
-    form.push_str(&format!("*{}\r\n",mid));
-    while ind < mid {
-        // println!("ind: {}, mid: {}",ind, mid+ind);
-        let stream_key = &streams_ids[ind];
-        let stream_id = &streams_ids[ind+mid];
-        // println!("stream_key: {}, stream_id: {}", stream_key, stream_id);
-        let (epoch, seq_num) = extract_stream_id(stream_id.to_string()).await?;
-        
-        {
-            let kv_map_gaurd = kv_map.lock().await;
-            if let Some(vs) = kv_map_gaurd.get(stream_key) {
-                // println!("Found: {}",stream_key);
-                let mut c2 = 0;
-                let mut temp2 = String::new();
-                form.push_str("*2\r\n");
-                form.push_str(&format!("${}\r\n{}\r\n",stream_key.len().to_string(), stream_key));
-                if let Value::STREAM(stream_list) = vs.value() {
-                    for ss in stream_list {
-                        // if epoch == ss.epoch && seq_num as usize > ss.seq_number {
-                        //     println!("{}", ss);
-                        // }
-                        if epoch == ss.epoch {
-                            if ss.seq_number > seq_num as usize {
-                                // println!("{}",ss);
-                                c2 += 1;
-                                temp2.push_str(&ss.to_string());
-                            }
-                        } else if ss.epoch > epoch {
-                            // println!("{}",ss);
-                            c2 += 1;
-                            temp2.push_str(&ss.to_string());
-                        }
-                    }
+    if streams_ids[0].eq("block") {
+            
+        let block_streams_ids = streams_ids[3..].to_vec();
+        let timeout_millis = streams_ids[1].parse::<u64>()?;
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        // tokio::time::sleep(tokio::time::Duration::from_millis(timeout_millis)).await;
+        // tokio::spawn(async move {
+        //     println!("Started to fetch....");
+        //     tokio::time::sleep(tokio::time::Duration::from_millis(1550)).await;
+        //     let _ = tx.send("+SOMEDATA\r\n".to_string());
+        // });
+
+        // tokio::time::sleep(tokio::time::Duration::from_millis(timeout_millis)).await;
+        tokio::spawn(async move {
+            println!("Started to fetch....");
+            let mut t = 0_u64;
+            while let Ok(data_form) = extract_stream_read_data_block(block_streams_ids.clone(), kv_map.clone()).await {
+                if let Some(form) = data_form {
+                    // println!("recv: {}",form);
+                    let _ = tx.send(form);
+                    break;
                 }
-                form.push_str(&format!("*{}\r\n", c2));
-                form.push_str(&temp2);
+                // println!("In whiile");
+                t += 150;
+                tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+                if t >= timeout_millis {
+                    break;
+                }
+            } 
+            
+            // let _ = tx.send("+SOMEDATA\r\n".to_string());
+        });
+        
+        let res = tokio::select! {
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(timeout_millis)) => {
+                "$-1\r\n".to_string()
             }
-        }
-        // println!();
-        ind += 1;
+            res = rx => {
+                match res {
+                    Ok(form) => form,
+                    Err(_) => "$-1\r\n".to_string()
+                }
+            }
+        };
+        Ok(res)
+    } else {
+        let form = extract_stream_read_data(streams_ids[1..].to_vec(), kv_map).await?;
+        // println!("{}",form);
+        Ok(form)
     }
-    // println!("\n");
-    // form.push_str("+OK\r\n");
-    Ok(form)
 }

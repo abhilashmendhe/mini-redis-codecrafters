@@ -21,6 +21,7 @@ pub async fn read_handler(
     blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>,
     command_init_for_replica: Arc<Mutex<bool>>,
     store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>>
     // multi_command_map: Arc<Mutex<HashMap<u16, String>>>
 ) -> Result<(), RedisErrors> {
 
@@ -37,6 +38,7 @@ pub async fn read_handler(
     let mut read_buf = [0u8; 1024];
     let connections1 = Arc::clone(&connections);
     let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
+    // let xread_clients_queue1 = Arc::clone(&xread_clients_queue);
     loop {  
         match reader.read(&mut read_buf).await {
             Ok(0) => {
@@ -53,10 +55,10 @@ pub async fn read_handler(
                         }
                     }
                 }
-                for port in clients_ports {
-                    println!("Client {}:{}, disconnected....", sock_addr.ip(), sock_addr.port());
-                    connections2.lock().await.remove(&port);
-                }
+                // for port in clients_ports {
+                //     println!("Client {}:{}, disconnected....", sock_addr.ip(), sock_addr.port());
+                //     connections2.lock().await.remove(&port);
+                // }
                 println!();
                 return Ok(());
             },
@@ -340,11 +342,29 @@ pub async fn read_handler(
                         
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("XREAD") {
-                        let streams_with_id = &cmds[2..].to_vec();
+                        println!("{:?}",cmds);
+                        if cmds[1].eq("block") {
+                            xread_clients_queue.lock().await.push_back(sock_addr);
+                        }
+                        let streams_with_id = &cmds[1..].to_vec();
                         let form = xread(
                             streams_with_id, 
                             Arc::clone(&kv_map)).await?;
-                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                        if cmds[1].eq("block") {
+                            // println!("returning form to block client: {}",form);
+                            let mut sock_addr= sock_addr;
+                            let mut xread_clients_queue_gaurd = xread_clients_queue.lock().await;
+                            if let Some(queue_sock_addr) = xread_clients_queue_gaurd.pop_front() {
+                                // println!("returning to {}",queue_sock_addr);
+                                // send_to_client(&connections, &queue_sock_addr, form.as_bytes()).await?;
+                                sock_addr = queue_sock_addr;
+                            }
+                            std::mem::drop(xread_clients_queue_gaurd);
+                            // println!("Dropped xread_clients_queue_gaurd");
+                            send_to_client(&connections, &sock_addr, form.as_bytes()).await?;            
+                        } else {
+                            send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                        }
                     }
                     else {
 

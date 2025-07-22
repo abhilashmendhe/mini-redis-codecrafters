@@ -273,11 +273,11 @@ pub async fn blpop(
                 Some(item)
             },     // Got item from RPUSH
             Ok(Err(_)) => {
-                println!("ho gaya bro kavacha 1.");
+                // println!("ho gaya bro kavacha 1.");
                 None
             },  
             Err(_) => {
-                println!("ho gaya bro kabka 2.");
+                // println!("ho gaya bro kabka 2.");
                 {println!("{:?}",blpop_clients_queue.lock().await);}
                 form.push_str("$-1\r\n");
                 // println!("form: {}", form);
@@ -314,7 +314,6 @@ pub async fn no_timeout_blpop(
         blpop_clients_queue, 
         tx
     ).await;
-    
     
     if form.len() <=0 {
             
