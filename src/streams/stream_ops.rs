@@ -170,7 +170,10 @@ pub async fn xread(
     if streams_ids[0].eq("block") {
             
         let block_streams_ids = streams_ids[3..].to_vec();
-        let timeout_millis = streams_ids[1].parse::<u64>()?;
+        let mut timeout_millis = streams_ids[1].parse::<u64>()?;
+        if timeout_millis == 0 {
+            timeout_millis = 9223372036854775807;
+        }
         let (tx, rx) = tokio::sync::oneshot::channel::<String>();
         // tokio::time::sleep(tokio::time::Duration::from_millis(timeout_millis)).await;
         // tokio::spawn(async move {
