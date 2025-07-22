@@ -1,5 +1,7 @@
-use std::{collections::LinkedList};
+use std::{collections::{HashMap, LinkedList}, sync::Arc};
 
+
+use tokio::sync::Mutex;
 
 use crate::{basics::{ all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, errors::RedisErrors, streams::{stream_struct::StreamStruct, stream_utils::{extract_stream_data, extract_stream_id, extract_stream_read_data, extract_stream_read_data_block}}};
 
@@ -174,19 +176,14 @@ pub async fn xread(
         if timeout_millis == 0 {
             timeout_millis = 9223372036854775807;
         }
-        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-        // tokio::time::sleep(tokio::time::Duration::from_millis(timeout_millis)).await;
-        // tokio::spawn(async move {
-        //     println!("Started to fetch....");
-        //     tokio::time::sleep(tokio::time::Duration::from_millis(1550)).await;
-        //     let _ = tx.send("+SOMEDATA\r\n".to_string());
-        // });
 
-        // tokio::time::sleep(tokio::time::Duration::from_millis(timeout_millis)).await;
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        
+        let stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>> = Arc::new(Mutex::new(HashMap::new()));
         tokio::spawn(async move {
             println!("Started to fetch....");
             let mut t = 0_u64;
-            while let Ok(data_form) = extract_stream_read_data_block(block_streams_ids.clone(), kv_map.clone()).await {
+            while let Ok(data_form) = extract_stream_read_data_block(block_streams_ids.clone(), kv_map.clone(), stream_key_last_value.clone()).await {
                 if let Some(form) = data_form {
                     // println!("recv: {}",form);
                     let _ = tx.send(form);

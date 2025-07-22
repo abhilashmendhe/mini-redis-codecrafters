@@ -1,4 +1,6 @@
-use std::{collections::VecDeque};
+use std::{collections::{HashMap, VecDeque}, sync::Arc};
+
+use tokio::sync::Mutex;
 
 use crate::{basics::{all_types::SharedMapT, kv_ds::Value}, errors::RedisErrors, get_current_unix_time, streams::stream_struct::StreamValue};
 
@@ -61,9 +63,48 @@ pub async fn extract_stream_id(
     }
 }
 
+pub async fn get_stream_key_last_value(
+    stream_key: &String, 
+    stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>>
+) -> (u128, isize) {
+
+    let sklv_gaurd = stream_key_last_value.lock().await;
+    if let Some((epoch, seq_num)) = sklv_gaurd.get(stream_key){
+        (*epoch, *seq_num)
+    } else {
+        (10,-10)
+    }
+}
+
+pub async fn set_stream_last_value(
+    stream_key: &String, 
+    kv_map: SharedMapT,
+    stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>>
+) {
+    let mut epoch = 0_u128;
+    let mut seq_num = 0_isize;
+    {let kv_map_gaurd = kv_map.lock().await;
+    if let Some(vs) = kv_map_gaurd.get(stream_key) {
+        if let Value::STREAM(stream_list) = vs.value() {
+            if let Some(last_ss) = stream_list.back() {
+                epoch = last_ss.epoch;
+                seq_num = last_ss.seq_number as isize;
+            }
+
+        }
+    }}
+    {
+       let mut sklv_gaurd = stream_key_last_value.lock().await;
+        if !sklv_gaurd.contains_key(stream_key) {
+            sklv_gaurd.insert(stream_key.to_string(), (epoch, seq_num));
+        }
+    }
+}
+
 pub async fn extract_stream_read_data_block(
     streams_ids: Vec<String>,
     kv_map: SharedMapT,
+    stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>>
     // tx: Arc<>
 ) -> Result<Option<String>, RedisErrors> {
 
@@ -78,9 +119,16 @@ pub async fn extract_stream_read_data_block(
     while ind < mid {
         let stream_key = &streams_ids[ind];
         let stream_id = &streams_ids[ind+mid];
-
-        let (epoch, seq_num) = extract_stream_id(stream_id.to_string()).await?;
-        
+        if stream_id.eq("$") {
+            set_stream_last_value(&stream_key, kv_map.clone(), stream_key_last_value.clone()).await;
+        }
+        let (epoch, seq_num) = {
+            if stream_id.eq("$") {
+                get_stream_key_last_value(&stream_key, stream_key_last_value.clone()).await
+            } else {
+                extract_stream_id(stream_id.to_string()).await?
+            }
+        };
         {
             let kv_map_gaurd = kv_map.lock().await;
             if let Some(vs) = kv_map_gaurd.get(stream_key) {
