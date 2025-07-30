@@ -19,6 +19,7 @@ mod streams;
 mod transactions;
 mod basics;
 
+pub mod pub_sub;
 
 pub async fn get_current_unix_time() -> Result<u128, RedisErrors> {
     let start = SystemTime::now();

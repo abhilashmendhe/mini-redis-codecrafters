@@ -72,7 +72,7 @@ pub async fn read_handler(
                 
                 while let Some((cmds, _end)) = try_parse_resp(&buffer).await {
                     buffer.clear();
-
+                    // println!("{:?}",cmds);
                     // send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     // tokio::time::sleep(Duration::from_secs(4)).await;
                     
@@ -365,6 +365,31 @@ pub async fn read_handler(
                         } else {
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         }
+                    } else if cmds[0].eq("SUBSCRIBE") {
+                        // println!("--> {:?}",cmds);
+                        // println!("--> {}",_recv_msg);
+
+                        let mut form = String::new();
+                        for (i, c) in cmds[1..].iter().enumerate() {
+                            form.push('*');
+                            form.push('3');
+                            form.push_str("\r\n");
+                            form.push('$');
+                            form.push('9');
+                            form.push_str("\r\n");
+                            form.push_str("subscribe");
+                            form.push_str("\r\n");
+                            form.push('$');
+                            form.push_str(&c.len().to_string());
+                            form.push_str("\r\n");
+                            form.push_str(c);
+                            form.push_str("\r\n");
+                            form.push(':');
+                            form.push_str(&(i+1).to_string());
+                            form.push_str("\r\n");
+                        }
+                        // println!("{}",form);
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {
 
