@@ -40,7 +40,7 @@ async fn insert_into_connection(
     if let Some(conn_struct) = conn_gaurd.get_mut(&sock_addr.port()) {
         
         // enable pub_sub flag
-        conn_struct.flag = true;
+        conn_struct.is_pub_sub = true;
         
         // push to pub-sub vec
         let pub_sub_ch = conn_struct.mut_get_pub_sub_ch();

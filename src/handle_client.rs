@@ -96,7 +96,15 @@ pub async fn read_handler(
                 let _recv_msg = String::from_utf8_lossy(&read_buf[..n]);
 
                 // println!("({}) --->  Recv: {}",sock_addr,_recv_msg);
-                
+                let ps_flag = {
+                    let conn_gaurd = connections1.lock().await;
+                    if let Some(cs) = conn_gaurd.get(&sock_addr.port()) {
+                        cs.is_pub_sub
+                    } else {
+                        false
+                    }
+                };
+                // println!("Is pub_sub on for {}: {}",sock_addr.port(),ps_flag);
                 while let Some((cmds, _end)) = try_parse_resp(&buffer).await {
                     buffer.clear();
                     // println!("{:?}",cmds);
@@ -105,33 +113,45 @@ pub async fn read_handler(
                     
                     // let cmds = parse_recv_bytes(&buffer[..n]).await?;
                     
-                    if cmds[0].eq("PING") {
-
-                        let form = format!("+PONG\r\n");
+                    if cmds[0].eq("PING") || cmds[0].eq("ping") {
+                        let form = if !ps_flag {
+                            format!("+PONG\r\n")
+                        } else {
+                            format!("*2\r\n$4\r\npong\r\n$0\r\n\r\n")
+                        };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("ECHO") {
 
-                        let form = format!("+{}\r\n",cmds[1]);
+                        let form = if !ps_flag {
+                            format!("+{}\r\n",cmds[1])                            
+                        } else {
+                            format!("-ERR Can't execute 'echo': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n")
+                        };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("BYE") {
 
                         println!("Bye received from replica: {}",sock_addr);
                         connections.lock().await.remove(&sock_addr.port());
                     } else if cmds[0] == String::from("GET") {
-                        let key = cmds[1].to_string();
-                        let command_transc_len = get_command_trans_len(sock_addr, Arc::clone(&connections)).await;
-                        let form = if command_transc_len > 0 {
-                            let form = append_transaction_to_commands(CommandTransactions::Get { key }, 
-                                sock_addr, 
-                                Arc::clone(&connections)).await;
+                        let form = if !ps_flag {
+                            let key = cmds[1].to_string();
+                            let command_transc_len = get_command_trans_len(sock_addr, Arc::clone(&connections)).await;
+                            let form = if command_transc_len > 0 {
+                                let form = append_transaction_to_commands(CommandTransactions::Get { key }, 
+                                    sock_addr, 
+                                    Arc::clone(&connections)).await;
+                                form
+                            } else {
+                                let form = get(key, kv_map.clone()).await;
+                                form
+                            };
                             form
                         } else {
-                            let form = get(key, kv_map.clone()).await;
-                            form
+                            format!("-ERR Can't execute 'get': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n")
                         };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0] == String::from("SET") {
-
+                        let form = if !ps_flag {
                         let key = cmds[1].to_string();
                         let value = cmds[2].to_string();
                         let px = if cmds.len() == 5 {
@@ -148,6 +168,10 @@ pub async fn read_handler(
                         } else {
                             let form = set(key, value, px, Arc::clone(&kv_map)).await?;
                             form
+                        };
+                        form
+                        } else {
+                            format!("-ERR Can't execute 'set': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n")
                         };
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
 
