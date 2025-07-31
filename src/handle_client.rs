@@ -107,7 +107,7 @@ pub async fn read_handler(
                 // println!("Is pub_sub on for {}: {}",sock_addr.port(),ps_flag);
                 while let Some((cmds, _end)) = try_parse_resp(&buffer).await {
                     buffer.clear();
-                    println!("{:?}",cmds);
+                    // println!("{:?}",cmds);
                     // send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     // tokio::time::sleep(Duration::from_secs(4)).await;
                     
@@ -438,7 +438,7 @@ pub async fn read_handler(
                             &cmds, 
                             sock_addr, 
                             connections.clone(), 
-                            pub_sub_map.clone()).await;
+                            pub_sub_map.clone()).await?;
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } 
                     else {
