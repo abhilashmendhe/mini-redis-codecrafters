@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::{BTreeSet, HashMap, VecDeque}, net::SocketAddr, sync::Arc, time::Duration};
 
 use tokio::sync::{mpsc, Mutex};
 
@@ -13,6 +13,10 @@ pub struct ConnectionStruct {
     pub tx_sender: mpsc::UnboundedSender<(SocketAddr, Vec<u8>)>,
     pub flag: bool,
     pub command_trans: VecDeque<CommandTransactions>,
+
+    // Pub Sub vec
+    pub is_pub_sub: bool,
+    pub pub_sub_channels: BTreeSet<String>,
 }
 pub type SharedConnectionHashMapT = Arc<Mutex<HashMap<ClientId, ConnectionStruct>>>;
 
@@ -21,11 +25,15 @@ impl ConnectionStruct {
         tx_sender: mpsc::UnboundedSender<(SocketAddr, Vec<u8>)>,
         flag: bool,
         command_trans: VecDeque<CommandTransactions>,
+        is_pub_sub: bool,
+        pub_sub_channels: BTreeSet<String>
     ) -> Self {
         Self {
             tx_sender,
             flag,
-            command_trans
+            command_trans,
+            is_pub_sub,
+            pub_sub_channels
         }
     }
     // pub fn set_commands_trans(&mut self, command_trans: VecDeque<String>) {
@@ -36,6 +44,9 @@ impl ConnectionStruct {
     }
     pub fn get_command_vec(&self) -> &VecDeque<CommandTransactions> {
         &self.command_trans
+    }
+    pub fn mut_get_pub_sub_ch(&mut self) -> &mut BTreeSet<String> {
+        &mut self.pub_sub_channels
     }
 
 }

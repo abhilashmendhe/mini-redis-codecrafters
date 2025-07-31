@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify};
@@ -10,6 +10,7 @@ use crate::basics::kv_ds::ValueStruct;
 use crate::connection_handling::{ConnectionStruct, SharedConnectionHashMapT};
 use crate::errors::RedisErrors;
 use crate::handle_client::{read_handler, write_handler};
+use crate::pub_sub::pub_sub_ds::SharedPubSubType;
 use crate::rdb_persistence::rdb_persist::RDB;
 use crate::redis_server_info::ServerInfo;
 use crate::replication::replica_info::ReplicaInfo;
@@ -35,6 +36,8 @@ pub async fn run_master(
     let blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>> = Arc::new(Mutex::new(VecDeque::new()));
     // let multi_command_map = Arc::new(Mutex::new(HashMap::new()));
     let xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let pub_sub_map: SharedPubSubType = Arc::new(Mutex::new(HashMap::new()));
+
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -46,7 +49,7 @@ pub async fn run_master(
                         
                         // insert client info to the HashMap
                         {
-                            let conn_struct = ConnectionStruct::new(tx.clone(), false, VecDeque::new());
+                            let conn_struct = ConnectionStruct::new(tx.clone(), false, VecDeque::new(), false, BTreeSet::new());
                             let mut conns = connections.lock().await;
                             conns.insert(sock_addr.port(), conn_struct);
                         }
@@ -67,6 +70,7 @@ pub async fn run_master(
                         let store_commands1 = Arc::clone(&store_commands);
                         let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
                         let xread_clients_queue1 = Arc::clone(&xread_clients_queue);
+                        let pub_sub_map1 = Arc::clone(&pub_sub_map);
                         // let multi_command_map1 = Arc::clone(&multi_command_map);
                         // Spawn thread for reader task
                         tokio::spawn(async move {
@@ -84,7 +88,8 @@ pub async fn run_master(
                                 blpop_clients_queue1,
                                 command_init_for_replica1,
                                 store_commands1,
-                                xread_clients_queue1
+                                xread_clients_queue1,
+                                pub_sub_map1,
                                 // multi_command_map1
                             ).await
                         });

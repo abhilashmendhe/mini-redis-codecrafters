@@ -3,7 +3,7 @@ use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::pub_sub_ds::{subscribe, SharedPubSubType}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 
 use crate::transactions::commands::CommandTransactions;
 
@@ -21,7 +21,8 @@ pub async fn read_handler(
     blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>,
     command_init_for_replica: Arc<Mutex<bool>>,
     store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>,
-    xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>>
+    xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>>,
+    pub_sub_map: SharedPubSubType
     // multi_command_map: Arc<Mutex<HashMap<u16, String>>>
 ) -> Result<(), RedisErrors> {
 
@@ -44,14 +45,40 @@ pub async fn read_handler(
             Ok(0) => {
                 println!("0 bytes received");
                 let mut clients_ports = vec![];
+                let mut client_ps_ch = vec![];
                 let connections2 = Arc::clone(&connections1);
                 {
-                    let conn_gaurd = connections2.lock().await;
-                    for (k, conn_struct) in conn_gaurd.iter() {
+                    let mut conn_gaurd = connections2.lock().await;
+                    for (k, conn_struct) in conn_gaurd.iter_mut() {
                         // println!("key: {}, flag: {}", k, _flag);
                         let _flag = conn_struct.flag;
                         if !_flag {
                             clients_ports.push(*k);
+                        }
+                        // Remove all the channels subs from the client connection
+                        if conn_struct.is_pub_sub {
+                            let chs = conn_struct.mut_get_pub_sub_ch();
+                            while let Some(ch) =  chs.pop_first() {
+                                client_ps_ch.push(ch);
+                            }
+                        }
+                        conn_struct.is_pub_sub = false;
+                    }
+                }
+                for ch in client_ps_ch {
+                    {
+                        let mut ps_map = pub_sub_map.lock().await;
+                        let hs_empty = if let Some(ps_hs) = ps_map.get_mut(&ch) {
+                            ps_hs.remove(&sock_addr.port());
+                            let hs_empty = if ps_hs.len() == 0 {
+                                true
+                            } else {
+                                false
+                            };
+                            hs_empty
+                        } else { false };
+                        if hs_empty {
+                            ps_map.remove(&ch);
                         }
                     }
                 }
@@ -366,33 +393,15 @@ pub async fn read_handler(
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         }
                     } else if cmds[0].eq("SUBSCRIBE") {
-                        // println!("--> {:?}",cmds);
-                        // println!("--> {}",_recv_msg);
 
-                        let mut form = String::new();
-                        for (i, c) in cmds[1..].iter().enumerate() {
-                            form.push('*');
-                            form.push('3');
-                            form.push_str("\r\n");
-                            form.push('$');
-                            form.push('9');
-                            form.push_str("\r\n");
-                            form.push_str("subscribe");
-                            form.push_str("\r\n");
-                            form.push('$');
-                            form.push_str(&c.len().to_string());
-                            form.push_str("\r\n");
-                            form.push_str(c);
-                            form.push_str("\r\n");
-                            form.push(':');
-                            form.push_str(&(i+1).to_string());
-                            form.push_str("\r\n");
-                        }
-                        // println!("{}",form);
+                        let form = subscribe(
+                            &cmds, 
+                            sock_addr, 
+                            connections.clone(), 
+                            pub_sub_map.clone()).await?;
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {
-
                         send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     }
                 
