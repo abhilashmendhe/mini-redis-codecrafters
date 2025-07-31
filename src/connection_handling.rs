@@ -48,7 +48,9 @@ impl ConnectionStruct {
     pub fn mut_get_pub_sub_ch(&mut self) -> &mut BTreeSet<String> {
         &mut self.pub_sub_channels
     }
-
+    pub fn set_pub_sub_flag(&mut self, f: bool) {
+        self.is_pub_sub = f;
+    }
 }
 
 pub async fn init_connection_channel() -> SharedConnectionHashMapT {

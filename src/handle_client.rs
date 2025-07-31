@@ -3,7 +3,7 @@ use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::pub_sub_ds::{subscribe, SharedPubSubType}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 
 use crate::transactions::commands::CommandTransactions;
 
@@ -107,7 +107,7 @@ pub async fn read_handler(
                 // println!("Is pub_sub on for {}: {}",sock_addr.port(),ps_flag);
                 while let Some((cmds, _end)) = try_parse_resp(&buffer).await {
                     buffer.clear();
-                    // println!("{:?}",cmds);
+                    println!("{:?}",cmds);
                     // send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     // tokio::time::sleep(Duration::from_secs(4)).await;
                     
@@ -424,7 +424,23 @@ pub async fn read_handler(
                             connections.clone(), 
                             pub_sub_map.clone()).await?;
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
-                    }
+                    } else if cmds[0].eq("UNSUBSCRIBE") {
+
+                        let form = unsubscribe(
+                            &cmds, 
+                            sock_addr, 
+                            connections.clone(), 
+                            pub_sub_map.clone()).await?;
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                    } else if cmds[0].eq("PUBLISH") {
+
+                        let form = publish(
+                            &cmds, 
+                            sock_addr, 
+                            connections.clone(), 
+                            pub_sub_map.clone()).await;
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                    } 
                     else {
                         send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                     }
