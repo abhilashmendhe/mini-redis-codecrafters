@@ -55,10 +55,19 @@ fn insert_values_in_sorted_set(
 
         let v1 = set_values[ind].parse::<f64>()?;
         let v2 = &set_values[ind+1];
+        let mut flag = true;
+        if let Some(ssv) = sorted_set.iter().find(|ds| ds.v2 == *v2).cloned() {
+            // println!("Exists {:?}",ssv);
+            flag = false;
+            sorted_set.remove(&ssv);
+        }
+        
         let sorted_values = SortedSetValues { v1, v2: v2.to_string() };
         
         if sorted_set.insert(sorted_values) {
-            count+=1;
+            if flag {
+                count+=1;
+            }
         }
         ind += 2;
     }
