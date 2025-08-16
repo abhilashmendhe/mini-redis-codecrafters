@@ -3,7 +3,7 @@ use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
 
-use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, sorted_sets::zadd_ops::zadd, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+use crate::{basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, sorted_sets::{zadd_ops::zadd, zrank_ops::zrank}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 
 use crate::transactions::commands::CommandTransactions;
 
@@ -459,6 +459,16 @@ pub async fn read_handler(
                                 send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                             }
                         }
+                    } else if cmds[0].eq("ZRANK") {
+                        let key = &cmds[1];
+                        let v2 = &cmds[2];
+                        let form = zrank(
+                            key,
+                            v2,
+                            Arc::clone(&kv_map)
+                        ).await;  
+                        
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     }
                     else {
                         send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
