@@ -19,6 +19,7 @@ pub async fn type_ops(
                 Value::NUMBER(_) => "+number\r\n",
                 Value::LIST(_) => "+list\r\n",
                 Value::STREAM(_) => "+stream\r\n",
+                Value::SORTED_SET(_) => "+zset\r\n"
             };
             v_type
         } else {

@@ -175,8 +175,7 @@ pub async fn lpop(
         match kv_map_gaurd.get_mut(listkey) {
             Some(value_struct) => {
                 match value_struct.mut_value() {
-                    Value::STRING(_) => todo!(),
-                    Value::NUMBER(_) => todo!(),
+
                     Value::LIST(items) => {
                         if cmds_len > 2 {
                             let mut nform = String::new();
@@ -211,7 +210,7 @@ pub async fn lpop(
                             }
                         }
                     },
-                    Value::STREAM(_) => todo!(),
+                    _ => todo!()
                 }
             },
             None => {

@@ -20,8 +20,7 @@ pub async fn incr_ops(
                     form.push_str(&*num.to_string());
                     form.push_str("\r\n");
                 },
-                Value::LIST(_) => {},
-                Value::STREAM(_) => {},
+                _ => {}
             }
             false
         } else {

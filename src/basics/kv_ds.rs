@@ -1,10 +1,10 @@
 #![allow(unused)]
 
-use std::{collections::{BTreeMap, HashMap, LinkedList, VecDeque}, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, LinkedList, VecDeque}, sync::Arc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use tokio::sync::Mutex;
 
-use crate::streams::stream_struct::StreamStruct;
+use crate::{sorted_sets::SortedSetValues, streams::stream_struct::StreamStruct};
 
 
 #[derive(Debug, Clone)]
@@ -13,6 +13,8 @@ pub enum Value {
     NUMBER(i64),
     LIST(VecDeque<String>),
     STREAM(LinkedList<StreamStruct>),
+    #[allow(non_camel_case_types)]
+    SORTED_SET(BTreeSet<SortedSetValues>)
     // STREAM(BTreeMap<u128, LinkedList<StreamStruct>>),
 }
 
@@ -46,6 +48,7 @@ impl ValueStruct {
             Value::NUMBER(num) => num.to_string().len(),
             Value::LIST(items) => items.len(),
             Value::STREAM(stream_items) => stream_items.len(),
+            Value::SORTED_SET(sorted_set) => sorted_set.len()
             // _ => {0}
         }
     }
