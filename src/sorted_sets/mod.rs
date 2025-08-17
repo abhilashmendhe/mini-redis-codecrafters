@@ -3,6 +3,7 @@ pub mod zrank_ops;
 pub mod zrange_ops;
 pub mod zcard_ops;
 pub mod zscore_ops;
+pub mod zrem_ops;
 
 use std::cmp::Ordering;
 
