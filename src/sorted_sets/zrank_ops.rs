@@ -20,9 +20,7 @@ pub async fn zrank(
                             break;
                         }
                         rank += 1;
-                    }
-                    // println!("found({}): {}, rank: {}", v2, flag, rank);
-                    
+                    }                    
                     if flag {
                         form.push(':');
                         form.push_str(&rank.to_string());
