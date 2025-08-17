@@ -1,6 +1,7 @@
 pub mod zadd_ops;
 pub mod zrank_ops;
 pub mod zrange_ops;
+pub mod zcard_ops;
 
 use std::cmp::Ordering;
 
