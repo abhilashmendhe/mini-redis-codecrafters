@@ -122,8 +122,11 @@ pub async fn read_handler(
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("ECHO") {
 
+                        let echo_str = &cmds[1];
+                        
                         let form = if !ps_flag {
-                            format!("+{}\r\n",cmds[1])                            
+                            // format!("+{}\r\n",cmds[1])
+                            format!("${}\r\n{}\r\n", echo_str.len(),echo_str)
                         } else {
                             format!("-ERR Can't execute 'echo': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n")
                         };
