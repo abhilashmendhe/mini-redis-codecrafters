@@ -396,7 +396,7 @@ pub async fn read_handler(
                         
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                     } else if cmds[0].eq("XREAD") {
-                        println!("{:?}",cmds);
+                        // println!("{:?}",cmds);
                         if cmds[1].eq("block") {
                             xread_clients_queue.lock().await.push_back(sock_addr);
                         }
@@ -521,6 +521,19 @@ pub async fn read_handler(
                         ).await;  
                         
                         send_to_client(&connections, &sock_addr, form.as_bytes()).await?;   
+                    } else if cmds[0].eq("GEOADD") {
+                        // println!("{:?}",&cmds);
+
+                        let _key = &cmds[1];
+                        
+                        let remain_size = cmds[2..].len();
+                        let form = if remain_size % 3 != 0 {
+                                "-ERR syntax error\r\n".to_string()
+                            } else {
+                                let t_return = remain_size / 3;
+                                format!(":{}\r\n",t_return)
+                            };
+                        send_to_client(&connections, &sock_addr, form.as_bytes()).await?; 
                     }
                     else {
                         send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
