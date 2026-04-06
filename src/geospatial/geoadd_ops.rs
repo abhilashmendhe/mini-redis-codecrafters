@@ -1,4 +1,4 @@
-use crate::{basics::all_types::SharedMapT, errors::RedisErrors, sorted_sets::zadd_ops::zadd};
+use crate::{basics::all_types::SharedMapT, errors::RedisErrors, geospatial::encode_coords::encode_coords, sorted_sets::zadd_ops::zadd};
 
 pub async fn geoadd(
     key: &str,
@@ -12,15 +12,17 @@ pub async fn geoadd(
     // Check if longitude and latitude are valid
     let mut t_index = 0;
     while t_index < t_return {
-        let longitude = set_values[t_index * 3].parse::<f32>()?;
-        let latitude  = set_values[(t_index * 3) + 1].parse::<f32>()?;
+        let longitude = set_values[t_index * 3].parse::<f64>()?;
+        let latitude  = set_values[(t_index * 3) + 1].parse::<f64>()?;
         let location = set_values[(t_index * 3) + 2].clone();
         if (longitude < -180.0 || longitude > 180.0) || (latitude < -85.05112878 || latitude > 85.05112878) {
             return Ok(format!("-ERR invalid longitude,latitude pair {},{}\r\n", longitude, latitude));
         }
         
+        // Before adding into sorted sets, first calculate the scores
+        let score = encode_coords(longitude, latitude);
         // Now add it into sorted sets
-        let new_set_values = vec!["0".to_string(), location];
+        let new_set_values = vec![score.to_string(), location];
         let _ = zadd(key, &new_set_values, kv_ds.clone()).await?;
         
         t_index += 1;
