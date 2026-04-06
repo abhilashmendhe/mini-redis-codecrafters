@@ -14,6 +14,7 @@ mod master_or_slave;
 mod parse_redis_bytes_file;
 mod kv_lists;
 mod sorted_sets;
+mod geospatial;
 
 // #[allow(unused)]
 mod streams;
