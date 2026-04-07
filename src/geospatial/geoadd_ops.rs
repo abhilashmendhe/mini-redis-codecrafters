@@ -8,6 +8,7 @@ pub async fn geoadd(
 
     let set_size = set_values.len();
     let t_return = set_size / 3;
+    let mut act_return = 0;
 
     // Check if longitude and latitude are valid
     let mut t_index = 0;
@@ -23,11 +24,11 @@ pub async fn geoadd(
         let score = encode_coords(longitude, latitude);
         // Now add it into sorted sets
         let new_set_values = vec![score.to_string(), location];
-        let _ = zadd(key, &new_set_values, kv_ds.clone()).await?;
-        
+        let ret_val = zadd(key, &new_set_values, kv_ds.clone()).await?;
+        let ret_val_trim = &ret_val[1..(ret_val.len()-2)];
+        act_return += ret_val_trim.parse::<usize>()?;
         t_index += 1;
     }
     
-
-    Ok(format!(":{}\r\n",t_return))
+    Ok(format!(":{}\r\n",act_return))
 }
