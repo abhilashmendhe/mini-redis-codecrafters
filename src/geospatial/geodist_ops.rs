@@ -40,7 +40,7 @@ pub async fn geodist_ops(
     Ok(format!("${}\r\n{}\r\n", g_dist.len(), g_dist))
 }
 
-fn havenstine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+pub fn havenstine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
     const RADIUS: f64 = 6372797.560856;
 
