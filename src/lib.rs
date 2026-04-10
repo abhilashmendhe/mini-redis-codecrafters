@@ -15,6 +15,7 @@ mod parse_redis_bytes_file;
 mod kv_lists;
 mod sorted_sets;
 mod geospatial;
+mod acl;
 
 // #[allow(unused)]
 mod streams;
