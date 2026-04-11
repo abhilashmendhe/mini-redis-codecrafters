@@ -1,9 +1,9 @@
 
 use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{oneshot, Mutex, Notify}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify, RwLock, oneshot}};
 
-use crate::{acl::{acl_getuser::acl_get_user, acl_whoami::whoami}, basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch}, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, sorted_sets::{zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem, zscore_ops::zscore}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+use crate::{acl::{Acl, acl_getuser::acl_get_user, acl_whoami::whoami}, basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch}, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, sorted_sets::{zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem, zscore_ops::zscore}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 
 use crate::transactions::commands::CommandTransactions;
 
@@ -22,8 +22,10 @@ pub async fn read_handler(
     command_init_for_replica: Arc<Mutex<bool>>,
     store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>,
     xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>>,
-    pub_sub_map: SharedPubSubType
+    pub_sub_map: SharedPubSubType,
+    total_client_counts: Arc<RwLock<u64>>,
     // multi_command_map: Arc<Mutex<HashMap<u16, String>>>
+    acl_t: Arc<Mutex<Acl>>,
 ) -> Result<(), RedisErrors> {
 
     
@@ -96,15 +98,31 @@ pub async fn read_handler(
                 let _recv_msg = String::from_utf8_lossy(&read_buf[..n]);
 
                 // println!("({}) --->  Recv: {}",sock_addr,_recv_msg);
-                let ps_flag = {
+                let (ps_flag, _live_num_conn) = {
                     let conn_gaurd = connections1.lock().await;
                     if let Some(cs) = conn_gaurd.get(&sock_addr.port()) {
-                        cs.is_pub_sub
+                        (cs.is_pub_sub, conn_gaurd.len())
                     } else {
-                        false
+                        (false, 0)
                     }
                 };
                 // println!("Is pub_sub on for {}: {}",sock_addr.port(),ps_flag);
+                
+                // Check for Auth conn
+                {
+                    let mut total_client_conn_lock = total_client_counts.write().await;
+                    let acl_nopass_set_flag = {
+                        acl_t.lock().await.flags.nopass
+                    };
+                    {
+                        let mut conn_gaurd = connections1.lock().await; 
+                        if let Some(cs) = conn_gaurd.get_mut(&sock_addr.port()) {
+                            cs.acl_auth = acl_nopass_set_flag;
+                        }
+                    }
+                    *total_client_conn_lock += 1;
+                }
+
                 while let Some((cmds, _end)) = try_parse_resp(&buffer).await {
                     buffer.clear();
                     // println!("{:?}",cmds);
@@ -567,7 +585,12 @@ pub async fn read_handler(
                             if key == "WHOAMI" {
                                 whoami().await
                             } else if key == "GETUSER" {
-                                acl_get_user().await
+                                if cmds.len() < 3 {
+                                    "-ERR wrong number of arguments for 'acl|getuser' command".to_string()
+                                } else {
+                                    let user = &cmds[2];
+                                    acl_get_user(user).await
+                                }
                             } else {
                                 format!("-ERR unknown subcommand '{}'. Try ACL HELP.\r\n", key)              
                             } 

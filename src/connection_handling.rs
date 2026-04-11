@@ -17,6 +17,9 @@ pub struct ConnectionStruct {
     // Pub Sub vec
     pub is_pub_sub: bool,
     pub pub_sub_channels: BTreeSet<String>,
+
+    // Acl
+    pub acl_auth: bool
 }
 pub type SharedConnectionHashMapT = Arc<Mutex<HashMap<ClientId, ConnectionStruct>>>;
 
@@ -26,14 +29,16 @@ impl ConnectionStruct {
         flag: bool,
         command_trans: VecDeque<CommandTransactions>,
         is_pub_sub: bool,
-        pub_sub_channels: BTreeSet<String>
+        pub_sub_channels: BTreeSet<String>, 
+        acl_auth: bool
     ) -> Self {
         Self {
             tx_sender,
             flag,
             command_trans,
             is_pub_sub,
-            pub_sub_channels
+            pub_sub_channels,
+            acl_auth
         }
     }
     // pub fn set_commands_trans(&mut self, command_trans: VecDeque<String>) {
@@ -50,6 +55,13 @@ impl ConnectionStruct {
     }
     pub fn set_pub_sub_flag(&mut self, f: bool) {
         self.is_pub_sub = f;
+    }
+
+    pub fn set_acl_auth_flag(&mut self, f: bool) {
+        self.acl_auth = f;
+    }
+    pub fn get_acl_auth_flag(&self) -> bool{
+        self.acl_auth
     }
 }
 
