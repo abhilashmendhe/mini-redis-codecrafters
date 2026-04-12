@@ -2,6 +2,7 @@
 pub mod acl_whoami;
 pub mod acl_getuser;
 pub mod acl_setuser;
+pub mod acl_auth;
 
 #[derive(Debug)]
 pub struct Acl {

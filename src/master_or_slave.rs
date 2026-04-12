@@ -54,6 +54,12 @@ pub async fn run_master(
                         // channel to send/recv commands
                         let (tx, rx) = mpsc::unbounded_channel::<(SocketAddr, Vec<u8>)>();
                         
+                        // fetch acl value for `default` user from acl_t
+                        let acl_nopass = {
+                            let acl_t_gaurd = acl_t.lock().await;
+                            acl_t_gaurd.flags.nopass
+                        };
+
                         // insert client info to the HashMap
                         {
                             let conn_struct = ConnectionStruct::new(
@@ -62,7 +68,7 @@ pub async fn run_master(
                                 VecDeque::new(), 
                                 false, 
                                 BTreeSet::new(),
-                                false
+                                acl_nopass
                             );
                             let mut conns = connections.lock().await;
                             conns.insert(sock_addr.port(), conn_struct);
