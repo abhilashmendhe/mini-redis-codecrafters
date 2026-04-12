@@ -18,6 +18,7 @@ pub async fn acl_set_user(
         
         let acl_t_mut_passwords = acl_t_gaurd.mut_passwords();
 
+        let mut should_set_nopass_false = true;
         for pass in passwords {
             if !pass.starts_with('>') {
                 return format!("-ERR Error in ACL SETUSER modifier '{}': Syntax error\r\n", pass);
@@ -31,7 +32,9 @@ pub async fn acl_set_user(
                                     .map(|b| format!("{:02x}", b))
                                     .collect();
             acl_t_mut_passwords.push(sha256_pass);
+            should_set_nopass_false = false;
         }
+        acl_t_gaurd.set_acl_flags_nopass(should_set_nopass_false);
     }
     "+OK\r\n".to_string()
 }

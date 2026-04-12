@@ -14,6 +14,11 @@ pub struct AclFlags {
     pub on: bool, 
     pub nopass: bool 
 }
+impl AclFlags {
+    pub fn set_nopass(&mut self, flag: bool) {
+        self.nopass = flag;
+    } 
+}
 
 impl Acl {
     pub fn new() -> Self {
@@ -24,6 +29,9 @@ impl Acl {
     }
     pub fn mut_passwords(&mut self) -> &mut Vec<String> {
         &mut self.passwords
+    }
+    pub fn set_acl_flags_nopass(&mut self, f: bool) {
+        self.flags.set_nopass(f);
     }
 }
 
