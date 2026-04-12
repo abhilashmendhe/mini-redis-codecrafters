@@ -3,7 +3,7 @@ use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
 
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, sync::{Mutex, Notify, RwLock, oneshot}};
 
-use crate::{acl::{Acl, acl_getuser::acl_get_user, acl_whoami::whoami}, basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch}, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, sorted_sets::{zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem, zscore_ops::zscore}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
+use crate::{acl::{Acl, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami}, basics::{all_types::{SharedMapT, SharedRDBStructT}, basic_ops::{get, get_pattern_match_keys, set}}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch}, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, parse_redis_bytes_file::try_parse_resp, pub_sub::{pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe}, publish_cmd::publish}, redis_server_info::ServerInfo, replication::{propagate_cmds::propagate_master_commands, replica_info::ReplicaInfo, replication_ops::{psync_ops, replconf_ops, wait_repl}}, sorted_sets::{zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem, zscore_ops::zscore}, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{append_commands::{append_transaction_to_commands, get_command_trans_len}, transac_ops::{discard_multi, exec_multi, incr_ops, multi}}};
 
 use crate::transactions::commands::CommandTransactions;
 
@@ -583,15 +583,27 @@ pub async fn read_handler(
                         } else {
                             let key = &cmds[1];
                             if key == "WHOAMI" {
+
                                 whoami().await
                             } else if key == "GETUSER" {
-                                if cmds.len() < 3 {
-                                    "-ERR wrong number of arguments for 'acl|getuser' command".to_string()
+                                
+                                if cmds.len() < 3 || cmds.len() > 3 {
+                                    "-ERR wrong number of arguments for 'acl|getuser' command\r\n".to_string()
                                 } else {
                                     let user = &cmds[2];
-                                    acl_get_user(user).await
+                                    acl_get_user(user, acl_t.clone()).await
+                                }
+                            } else if key == "SETUSER" {
+                                
+                                if cmds.len() < 3 {
+                                    "-ERR wrong number of arguments for 'acl|setuser' command\r\n".to_string()
+                                } else {
+                                    let _user = &cmds[2];
+                                    let passwords = &cmds[3..].to_vec();
+                                    acl_set_user(passwords, acl_t.clone()).await
                                 }
                             } else {
+                                
                                 format!("-ERR unknown subcommand '{}'. Try ACL HELP.\r\n", key)              
                             } 
                         };

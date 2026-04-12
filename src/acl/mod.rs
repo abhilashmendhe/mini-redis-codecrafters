@@ -1,5 +1,7 @@
+
 pub mod acl_whoami;
 pub mod acl_getuser;
+pub mod acl_setuser;
 
 #[derive(Debug)]
 pub struct Acl {
@@ -20,10 +22,49 @@ impl Acl {
             passwords: vec![]
         }
     }
+    pub fn mut_passwords(&mut self) -> &mut Vec<String> {
+        &mut self.passwords
+    }
 }
 
 impl std::fmt::Display for Acl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        
+        // concat acl flags
+        let mut acl_flag_out = String::new();
+        let mut acl_flag_count = 0;
+        let acl_flags = &self.flags;
+        if acl_flags.on {
+            acl_flag_out.push('$');
+            acl_flag_out.push('2');
+            acl_flag_out.push_str("\r\n");
+            acl_flag_out.push_str("on");
+            acl_flag_out.push_str("\r\n");
+            acl_flag_count += 1;
+        } 
+        if acl_flags.nopass {
+            acl_flag_out.push('$');
+            acl_flag_out.push('6');
+            acl_flag_out.push_str("\r\n");
+            acl_flag_out.push_str("nopass");
+            acl_flag_out.push_str("\r\n");
+            acl_flag_count += 1;
+        }
+
+        // concat password fields
+        let mut acl_pass_out = String::new();
+        let mut acl_pass_count = 0;
+        let passwords = &self.passwords;
+        
+        for pass in passwords {
+            acl_pass_out.push('$');
+            acl_pass_out.push_str(&pass.len().to_string());
+            acl_pass_out.push_str("\r\n");
+            acl_pass_out.push_str(pass);
+            acl_pass_out.push_str("\r\n");
+            acl_pass_count += 1;
+        }
+
+        write!(f, "*4\r\n$5\r\nflags\r\n*{}\r\n{}$9\r\npasswords\r\n*{}\r\n{}", acl_flag_count, acl_flag_out, acl_pass_count, acl_pass_out)
     }
 }

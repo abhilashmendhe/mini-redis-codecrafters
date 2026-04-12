@@ -1,5 +1,12 @@
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
+
+use crate::acl::Acl;
+
 pub async fn acl_get_user(
-    _user_name: &str
+    _user_name: &str,
+    acl_t: Arc<Mutex<Acl>>
 ) -> String {
-    "*2\r\n$5\r\nflags\r\n*1\r\n$6\r\nnopass\r\n".to_string()
+    acl_t.lock().await.to_string()
 }
