@@ -1,11 +1,21 @@
-use std::{collections::VecDeque, net::SocketAddr, sync::{Arc}};
+use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 
-use tokio::{sync::{oneshot, Mutex}, time::timeout};
-
-use crate::{
-    basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, handle_client::send_to_client, kv_lists::list_ops_utils::{blpop_ops, compute_index, fetch_list} 
+use tokio::{
+    sync::{oneshot, Mutex},
+    time::timeout,
 };
 
+use crate::{
+    basics::{
+        all_types::SharedMapT,
+        basic_ops::insert,
+        kv_ds::{Value, ValueStruct},
+    },
+    connection_handling::SharedConnectionHashMapT,
+    errors::RedisErrors,
+    handle_client::send_to_client,
+    kv_lists::list_ops_utils::{blpop_ops, compute_index, fetch_list},
+};
 
 pub async fn push(
     // cmds: &Vec<String>,
@@ -13,94 +23,90 @@ pub async fn push(
     list_key: String,
     values: Vec<String>,
     kv_map: SharedMapT,
-    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr, oneshot::Sender<(String, SocketAddr)>)>>>,
 ) -> Result<String, RedisErrors> {
-
     let mut list_len = 0;
     let value_struct = {
-    let mut kv_map_gaurd = kv_map.lock().await;
-    
-    let value_struct = match kv_map_gaurd.get_mut(&list_key) {
-        Some(value_struct) => {
-            match &mut value_struct.value {
-               Value::LIST(list_items) => {
-                    for item in values {
-                        if push_side.eq("RPUSH") {
-                            list_items.push_back(item.to_string());
-                        } else if push_side.eq("LPUSH") {
-                            list_items.push_front(item.to_string());
+        let mut kv_map_gaurd = kv_map.lock().await;
+
+        let value_struct = match kv_map_gaurd.get_mut(&list_key) {
+            Some(value_struct) => {
+                match &mut value_struct.value {
+                    Value::LIST(list_items) => {
+                        for item in values {
+                            if push_side.eq("RPUSH") {
+                                list_items.push_back(item.to_string());
+                            } else if push_side.eq("LPUSH") {
+                                list_items.push_front(item.to_string());
+                            }
+                            list_len += 1;
                         }
-                        list_len += 1;
+                        if let Some((sock_addr, waiter)) =
+                            blpop_clients_queue.lock().await.pop_front()
+                        {
+                            if let Some(item) = list_items.pop_front() {
+                                let _ = waiter.send((item, sock_addr));
+                            }
+                        }
+                        list_len = {
+                            if list_len > list_items.len() {
+                                list_len
+                            } else {
+                                list_items.len()
+                            }
+                        };
                     }
-                    if let Some((sock_addr, waiter)) = blpop_clients_queue.lock().await.pop_front() {
-                        if let Some(item) = list_items.pop_front() {
-                            let _ = waiter.send((item, sock_addr));
-                        }
+                    _ => todo!(),
+                }
+                value_struct.to_owned()
+            }
+            None => {
+                let mut list_items = VecDeque::new();
+
+                // items.push_back("haha".to_string());
+                for item in values {
+                    if push_side.eq("RPUSH") {
+                        list_items.push_back(item.to_string());
+                    } else if push_side.eq("LPUSH") {
+                        list_items.push_front(item.to_string());
                     }
-                    list_len = {
-                        if list_len > list_items.len() {
-                            list_len
-                        } else {
-                            list_items.len()
-                        }
-                    };
-                },
-                _ => todo!(),
-            }
-            value_struct.to_owned()
-        },
-        None => {
-            let mut list_items = VecDeque::new();
-            
-            // items.push_back("haha".to_string());
-            for item in values {
-                if push_side.eq("RPUSH") {
-                    list_items.push_back(item.to_string());
-                } else if push_side.eq("LPUSH") {
-                    list_items.push_front(item.to_string());
+                    list_len += 1;
                 }
-                list_len += 1;
-            }
-            if let Some((sock_addr, waiter)) = blpop_clients_queue.lock().await.pop_front() {
-                if let Some(item) = list_items.pop_front() {
-                    let _ = waiter.send((item,sock_addr));
+                if let Some((sock_addr, waiter)) = blpop_clients_queue.lock().await.pop_front() {
+                    if let Some(item) = list_items.pop_front() {
+                        let _ = waiter.send((item, sock_addr));
+                    }
                 }
+                list_len = {
+                    if list_len > list_items.len() {
+                        list_len
+                    } else {
+                        list_items.len()
+                    }
+                };
+                // println!("{:?}",list_items);
+                let value_struct = ValueStruct::new(Value::LIST(list_items), None, None);
+                // if cmds.len() == 5 {
+                //     let px = cmds[4].parse::<u128>()?;
+                //     let now = SystemTime::now()
+                //             .duration_since(UNIX_EPOCH)?;
+                //     let now_ms = now.as_millis() + px as u128;
+                //     value_struct.set_px(Some(px));
+                //     value_struct.set_pxat(Some(now_ms));
+                // }
+                value_struct
             }
-            list_len = {
-                if list_len > list_items.len() {
-                    list_len
-                } else {
-                    list_items.len()
-                }
-            };
-            // println!("{:?}",list_items);
-            let value_struct = ValueStruct::new(
-                Value::LIST(list_items),
-                None, 
-                None, 
-            );
-            // if cmds.len() == 5 {
-            //     let px = cmds[4].parse::<u128>()?;
-            //     let now = SystemTime::now()
-            //             .duration_since(UNIX_EPOCH)?;
-            //     let now_ms = now.as_millis() + px as u128;
-            //     value_struct.set_px(Some(px));
-            //     value_struct.set_pxat(Some(now_ms));
-            // }
-            value_struct
-        },
         };
         value_struct
     };
     insert(list_key.to_string(), value_struct, kv_map.clone()).await;
     // let new_list_len = {
-    //     if list_len > 
+    //     if list_len >
     // }
-    
-    let form = format!(":{}\r\n",list_len);
+
+    let form = format!(":{}\r\n", list_len);
     Ok(form)
 }
-
 
 pub async fn lrange(
     list_key: String,
@@ -123,7 +129,7 @@ pub async fn lrange(
     } else {
         let stop = {
             if stop > list_items.len() as i64 {
-                list_items.len() as  i64
+                list_items.len() as i64
             } else {
                 stop
             }
@@ -147,22 +153,14 @@ pub async fn lrange(
     Ok(form)
 }
 
-pub async fn llen(
-    list_key: String,
-    kv_map: SharedMapT,
-) -> Result<String, RedisErrors> {
-
+pub async fn llen(list_key: String, kv_map: SharedMapT) -> Result<String, RedisErrors> {
     let list_items = fetch_list(&list_key, kv_map).await;
     let list_len = list_items.len();
-    let form = format!(":{}\r\n",list_len);
+    let form = format!(":{}\r\n", list_len);
     Ok(form)
 }
 
-pub async fn lpop(
-    cmds: &Vec<String>,
-    kv_map: SharedMapT
-) -> Result<String, RedisErrors> {
-
+pub async fn lpop(cmds: &Vec<String>, kv_map: SharedMapT) -> Result<String, RedisErrors> {
     let listkey = &cmds[1];
     let mut num_items = 0;
     let cmds_len = cmds.len();
@@ -173,52 +171,49 @@ pub async fn lpop(
     {
         let mut kv_map_gaurd = kv_map.lock().await;
         match kv_map_gaurd.get_mut(listkey) {
-            Some(value_struct) => {
-                match value_struct.mut_value() {
-
-                    Value::LIST(items) => {
-                        if cmds_len > 2 {
-                            let mut nform = String::new();
-                            let mut count = 0;
-                            while num_items > 0 {
-                                if items.len() <= 0 {
-                                    break;
-                                }
-                                if let Some(k) = items.pop_front() {
-                                    nform.push('$');
-                                    nform.push_str(&k.len().to_string());
-                                    nform.push_str("\r\n");
-                                    nform.push_str(&k);
-                                    nform.push_str("\r\n");   
-                                }
-                                count += 1;
-                                num_items -= 1;
+            Some(value_struct) => match value_struct.mut_value() {
+                Value::LIST(items) => {
+                    if cmds_len > 2 {
+                        let mut nform = String::new();
+                        let mut count = 0;
+                        while num_items > 0 {
+                            if items.len() <= 0 {
+                                break;
                             }
-                            form.push('*');
-                            form.push_str(&count.to_string());
-                            form.push_str("\r\n");
-                            form.push_str(&nform);
-                        } else {
                             if let Some(k) = items.pop_front() {
-                                form.push('$');
-                                form.push_str(&k.len().to_string());
-                                form.push_str("\r\n");
-                                form.push_str(&k);
-                                form.push_str("\r\n");   
-                            } else {
-                                form.push_str(":0\r\n");
+                                nform.push('$');
+                                nform.push_str(&k.len().to_string());
+                                nform.push_str("\r\n");
+                                nform.push_str(&k);
+                                nform.push_str("\r\n");
                             }
+                            count += 1;
+                            num_items -= 1;
                         }
-                    },
-                    _ => todo!()
+                        form.push('*');
+                        form.push_str(&count.to_string());
+                        form.push_str("\r\n");
+                        form.push_str(&nform);
+                    } else {
+                        if let Some(k) = items.pop_front() {
+                            form.push('$');
+                            form.push_str(&k.len().to_string());
+                            form.push_str("\r\n");
+                            form.push_str(&k);
+                            form.push_str("\r\n");
+                        } else {
+                            form.push_str(":0\r\n");
+                        }
+                    }
                 }
+                _ => todo!(),
             },
             None => {
                 form.push_str(":0\r\n");
-            },
+            }
         }
     }
-    Ok(form)    
+    Ok(form)
 }
 
 pub async fn blpop(
@@ -226,31 +221,18 @@ pub async fn blpop(
     sock_addr: SocketAddr,
     kv_map: SharedMapT,
     connections: SharedConnectionHashMapT,
-    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr, oneshot::Sender<(String, SocketAddr)>)>>>,
 ) -> Result<(), RedisErrors> {
-    
     let listkey = cmds[1].to_string();
     let f_secs = cmds[2].parse::<f64>()?;
     let seconds = (f_secs * 1000.0) as u64;
-    
+
     if seconds == 0 {
-        no_timeout_blpop(
-            listkey, 
-            sock_addr, 
-            kv_map, 
-            connections, 
-            blpop_clients_queue
-        ).await?;
+        no_timeout_blpop(listkey, sock_addr, kv_map, connections, blpop_clients_queue).await?;
     } else {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let blpop_clients_queue1 = Arc::clone(&blpop_clients_queue);
-        let mut form = blpop_ops(
-                                    &listkey, 
-                                    sock_addr, 
-                                    kv_map, 
-                                    blpop_clients_queue1, 
-                                    tx
-                                ).await;
+        let mut form = blpop_ops(&listkey, sock_addr, kv_map, blpop_clients_queue1, tx).await;
 
         match timeout(tokio::time::Duration::from_millis(seconds), rx).await {
             Ok(Ok((item, sock_addr))) => {
@@ -265,19 +247,21 @@ pub async fn blpop(
                 form.push_str("\r\n");
                 form.push_str(&item);
                 form.push_str("\r\n");
-                
+
                 send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                 form.clear();
                 form.push_str("$-1\r\n");
                 Some(item)
-            },     // Got item from RPUSH
+            } // Got item from RPUSH
             Ok(Err(_)) => {
                 // println!("ho gaya bro kavacha 1.");
                 None
-            },  
+            }
             Err(_) => {
                 // println!("ho gaya bro kabka 2.");
-                {println!("{:?}",blpop_clients_queue.lock().await);}
+                {
+                    println!("{:?}", blpop_clients_queue.lock().await);
+                }
                 form.push_str("$-1\r\n");
                 // println!("form: {}", form);
                 {
@@ -287,9 +271,8 @@ pub async fn blpop(
                     }
                 }
                 None
-            },
+            }
         };
-
     }
 
     Ok(())
@@ -300,26 +283,17 @@ pub async fn no_timeout_blpop(
     sock_addr: SocketAddr,
     kv_map: SharedMapT,
     connections: SharedConnectionHashMapT,
-    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>>
+    blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr, oneshot::Sender<(String, SocketAddr)>)>>>,
 ) -> Result<(), RedisErrors> {
-    
     let (tx, rx) = tokio::sync::oneshot::channel();
     let blpop_clients_queue2 = Arc::clone(&blpop_clients_queue);
-    
-    let mut form = blpop_ops(
-        &listkey, 
-        sock_addr, 
-        kv_map, 
-        blpop_clients_queue, 
-        tx
-    ).await;
-    
-    if form.len() <=0 {
-            
-        println!("Wating for the poppped elem"); 
+
+    let mut form = blpop_ops(&listkey, sock_addr, kv_map, blpop_clients_queue, tx).await;
+
+    if form.len() <= 0 {
+        println!("Wating for the poppped elem");
         match rx.await {
             Ok((item, sock_addr)) => {
-                
                 form.push_str("*2\r\n");
                 form.push('$');
                 form.push_str(&listkey.len().to_string());
@@ -331,17 +305,17 @@ pub async fn no_timeout_blpop(
                 form.push_str("\r\n");
                 form.push_str(&item);
                 form.push_str("\r\n");
-                
+
                 send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                 form.clear();
                 form.push_str("$-1\r\n");
-            },
+            }
             Err(e) => {
-                println!("recverr: {}",  e);
+                println!("recverr: {}", e);
                 form.push_str("$-1\r\n");
-            }, // Sender dropped
+            } // Sender dropped
         }
-    } else 
+    } else
     // {
     //     println!("After wait: {:?}",blpop_clients_queue2.lock().await);
     // }

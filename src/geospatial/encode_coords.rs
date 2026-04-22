@@ -1,37 +1,37 @@
 #[allow(unused)]
-pub const MIN_LATITUDE :f64 = -85.05112878;
-pub const MAX_LATITUDE  :f64= 85.05112878;
-pub const MIN_LONGITUDE :f64 = -180.0;
-pub const MAX_LONGITUDE :f64 = 180.0;
+pub const MIN_LATITUDE: f64 = -85.05112878;
+pub const MAX_LATITUDE: f64 = 85.05112878;
+pub const MIN_LONGITUDE: f64 = -180.0;
+pub const MAX_LONGITUDE: f64 = 180.0;
 
-pub const LATITUDE_RANGE  :f64 = MAX_LATITUDE - MIN_LATITUDE;
-pub const LONGITUDE_RANGE :f64  = MAX_LONGITUDE - MIN_LONGITUDE;
+pub const LATITUDE_RANGE: f64 = MAX_LATITUDE - MIN_LATITUDE;
+pub const LONGITUDE_RANGE: f64 = MAX_LONGITUDE - MIN_LONGITUDE;
 
 pub fn encode_coords(longitude: f64, latitude: f64) -> f64 {
-
     // 1. Normalizing
-    let normalized_latitude = (2_f64.powf(26.0) * (latitude - MIN_LATITUDE) / LATITUDE_RANGE) as u32;
-    let normalized_longitude = (2_f64.powf(26.0) * (longitude - MIN_LONGITUDE) / LONGITUDE_RANGE) as u32;
+    let normalized_latitude =
+        (2_f64.powf(26.0) * (latitude - MIN_LATITUDE) / LATITUDE_RANGE) as u32;
+    let normalized_longitude =
+        (2_f64.powf(26.0) * (longitude - MIN_LONGITUDE) / LONGITUDE_RANGE) as u32;
 
     // println!("normalized longitude: {}", normalized_longitude);
     // println!("normalized latitude: {}", normalized_latitude);
-    // 
+    //
     let score = interleave(normalized_latitude, normalized_longitude);
     // println!("score: {}", score);
     score as f64
 }
 
 fn spread_int32_to_int64(v: u32) -> u64 {
-
     // # Ensure only lower 32 bits are non-zero.
     let mut v = v as u64 & 0xFFFFFFFF;
 
     // # Bitwise operations to spread 32 bits into 64 bits with zeros in-between
     v = (v | (v << 16)) & 0x0000FFFF0000FFFF;
-    v = (v | (v << 8))  & 0x00FF00FF00FF00FF;
-    v = (v | (v << 4))  & 0x0F0F0F0F0F0F0F0F;
-    v = (v | (v << 2))  & 0x3333333333333333;
-    v = (v | (v << 1))  & 0x5555555555555555;
+    v = (v | (v << 8)) & 0x00FF00FF00FF00FF;
+    v = (v | (v << 4)) & 0x0F0F0F0F0F0F0F0F;
+    v = (v | (v << 2)) & 0x3333333333333333;
+    v = (v | (v << 1)) & 0x5555555555555555;
 
     return v;
 }

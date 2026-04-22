@@ -1,4 +1,8 @@
-use std::{collections::{HashMap, HashSet}, net::SocketAddr, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use tokio::sync::Mutex;
 
@@ -12,12 +16,11 @@ pub async fn unsubscribe(
     connections: SharedConnectionHashMapT,
     pub_sub_map: SharedPubSubType,
 ) -> Result<String, RedisErrors> {
-
     // println!("Channels subs to --->>>");
     let mut form = String::new();
     for ch in cmds[1..].iter() {
         // println!("{}",ch);
-    
+
         // First  - remove from the connection
         let pub_sub_len = remove_ch_from_connection(ch, sock_addr, connections.clone()).await;
 
@@ -34,14 +37,13 @@ pub async fn unsubscribe(
 async fn remove_ch_from_connection(
     ch: &String,
     sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT
+    connections: SharedConnectionHashMapT,
 ) -> usize {
     let mut conn_gaurd = connections.lock().await;
     if let Some(conn_struct) = conn_gaurd.get_mut(&sock_addr.port()) {
-        
         // // enable pub_sub flag
         // conn_struct.is_pub_sub = false;
-        
+
         // remove from pub-sub vec
         let pub_sub_len = {
             let pub_sub_ch = conn_struct.mut_get_pub_sub_ch();
@@ -63,14 +65,13 @@ async fn remove_from_pub_sub_map(
     sock_addr: SocketAddr,
     pub_sub_map: SharedPubSubType,
 ) {
-    
     let mut pub_sub_map_gaurd = pub_sub_map.lock().await;
     match pub_sub_map_gaurd.get_mut(ch) {
         Some(hs) => {
             hs.remove(&sock_addr.port());
-        },
-        _ => {},
-    }    
+        }
+        _ => {}
+    }
 }
 
 pub async fn subscribe(
@@ -79,12 +80,11 @@ pub async fn subscribe(
     connections: SharedConnectionHashMapT,
     pub_sub_map: SharedPubSubType,
 ) -> Result<String, RedisErrors> {
-
     // println!("Channels subs to --->>>");
     let mut form = String::new();
     for ch in cmds[1..].iter() {
         // println!("{}",ch);
-    
+
         // First  - insert in the connections
         let pub_sub_len = insert_into_connection(ch, sock_addr, connections.clone()).await;
 
@@ -101,19 +101,17 @@ pub async fn subscribe(
 async fn insert_into_connection(
     ch: &String,
     sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT
+    connections: SharedConnectionHashMapT,
 ) -> usize {
     let mut conn_gaurd = connections.lock().await;
     if let Some(conn_struct) = conn_gaurd.get_mut(&sock_addr.port()) {
-        
         // enable pub_sub flag
         conn_struct.is_pub_sub = true;
-        
+
         // push to pub-sub vec
         let pub_sub_ch = conn_struct.mut_get_pub_sub_ch();
         pub_sub_ch.insert(ch.to_string());
         pub_sub_ch.len()
-        
     } else {
         0
     }
@@ -124,18 +122,17 @@ async fn insert_into_pub_sub_map(
     sock_addr: SocketAddr,
     pub_sub_map: SharedPubSubType,
 ) {
-    
     let mut pub_sub_map_gaurd = pub_sub_map.lock().await;
     match pub_sub_map_gaurd.get_mut(ch) {
         Some(hs) => {
             hs.insert(sock_addr.port());
-        },
+        }
         None => {
             let mut hs = HashSet::new();
             hs.insert(sock_addr.port());
             let _ = pub_sub_map_gaurd.insert(ch.to_string(), hs);
-        },
-    }    
+        }
+    }
 }
 
 async fn pub_sub_format(form: &mut String, ch: &String, ps_len: usize, tp: String) {

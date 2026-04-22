@@ -31,7 +31,11 @@ impl SlaveStore {
 
 impl Display for SlaveStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ip={},port={},offset={}",self.ip, self.port, self.offset)
+        write!(
+            f,
+            "ip={},port={},offset={}",
+            self.ip, self.port, self.offset
+        )
     }
 }
 
@@ -43,12 +47,11 @@ pub struct SlaveReplicaInfo {
     // master_last_io_seconds_ago:2
     // master_sync_in_progress:0
     // slave_read_repl_offset:u64,
-    slave_repl_offset: i64
-    // replica_full_sync_buffer_size:0
-    // replica_full_sync_buffer_peak:0
-    // slave_priority:100
-    // slave_read_only:1
-    // replica_announced:1
+    slave_repl_offset: i64, // replica_full_sync_buffer_size:0
+                            // replica_full_sync_buffer_peak:0
+                            // slave_priority:100
+                            // slave_read_only:1
+                            // replica_announced:1
 }
 
 impl SlaveReplicaInfo {
@@ -56,13 +59,13 @@ impl SlaveReplicaInfo {
         master_host: String,
         master_port: u16,
         master_link_status: String,
-        slave_repl_offset: i64
+        slave_repl_offset: i64,
     ) -> Self {
         SlaveReplicaInfo {
             master_host,
             master_port,
             master_link_status,
-            slave_repl_offset
+            slave_repl_offset,
         }
     }
     pub fn master_host(&self) -> String {
@@ -81,17 +84,19 @@ impl SlaveReplicaInfo {
 
 impl Display for SlaveReplicaInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let master_host = format!("master_host:{}", self.master_host);
 
-        let master_host = format!("master_host:{}",self.master_host);
-        
-        let master_port = format!("master_port:{}",self.master_port);
-        
-        let master_link_status = format!("master_link_status:{}",self.master_link_status);
-        
-        let slave_repl_offset_str = format!("slave_repl_offset:{}",self.slave_repl_offset);
+        let master_port = format!("master_port:{}", self.master_port);
 
-        let full_s = format!("{}\r\n{}\r\n{}\r\n{}",master_host, master_port, master_link_status,slave_repl_offset_str);
-        
+        let master_link_status = format!("master_link_status:{}", self.master_link_status);
+
+        let slave_repl_offset_str = format!("slave_repl_offset:{}", self.slave_repl_offset);
+
+        let full_s = format!(
+            "{}\r\n{}\r\n{}\r\n{}",
+            master_host, master_port, master_link_status, slave_repl_offset_str
+        );
+
         write!(f, "{}", full_s)
     }
 }

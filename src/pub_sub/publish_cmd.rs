@@ -1,6 +1,9 @@
 use std::net::SocketAddr;
 
-use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors, pub_sub::pub_sub_ds::SharedPubSubType};
+use crate::{
+    connection_handling::SharedConnectionHashMapT, errors::RedisErrors,
+    pub_sub::pub_sub_ds::SharedPubSubType,
+};
 
 pub async fn publish(
     cmds: &Vec<String>,
@@ -28,15 +31,14 @@ pub async fn publish(
         0
     };
 
-    Ok(format!(":{}\r\n",hs_len))
+    Ok(format!(":{}\r\n", hs_len))
 }
 async fn pub_format(ch_name: &String, msg: &String) -> Vec<u8> {
-
     let mut form = String::new();
     form.push('*');
     form.push('3');
     form.push_str("\r\n");
-    
+
     form.push('$');
     form.push('7');
     form.push_str("\r\n");
@@ -54,6 +56,6 @@ async fn pub_format(ch_name: &String, msg: &String) -> Vec<u8> {
     form.push_str("\r\n");
     form.push_str(&msg);
     form.push_str("\r\n");
-    
+
     form.as_bytes().to_vec()
 }

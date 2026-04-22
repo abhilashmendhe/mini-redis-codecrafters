@@ -7,10 +7,8 @@ use crate::{basics::all_types::SharedRDBStructT, errors::RedisErrors};
 #[derive(Debug)]
 pub struct RDB {
     dirpath: String,
-    rdb_filepath: String
+    rdb_filepath: String,
 }
-
-
 
 pub fn init_rdb(args: &Vec<String>) -> Result<SharedRDBStructT, RedisErrors> {
     let mut dir_path = "".to_string();
@@ -20,7 +18,7 @@ pub fn init_rdb(args: &Vec<String>) -> Result<SharedRDBStructT, RedisErrors> {
             dir_path = args[2].clone();
         }
         if args[3] == "--dbfilename".to_string() {
-            dbfile_path = format!("{}/{}",dir_path, &args[4]);
+            dbfile_path = format!("{}/{}", dir_path, &args[4]);
         }
     }
     Ok(Arc::new(Mutex::new(RDB::new(dir_path, dbfile_path))))
@@ -30,7 +28,7 @@ impl RDB {
     pub fn new(dirpath: String, rdb_filepath: String) -> Self {
         RDB {
             dirpath,
-            rdb_filepath
+            rdb_filepath,
         }
     }
     pub async fn dirpath(&self) -> String {
@@ -58,12 +56,12 @@ pub async fn save(rdb: Arc<Mutex<RDB>>) -> Result<(), RedisErrors> {
         fs::create_dir(rdb_m_gaurd.dirpath().await)?;
     }
     // 1.1 Header and meta data in bytes
-    let mut header_meta_bytes = decode_hex_str(
-        String::from("524544495330303131FA0972656469732D76657206362E302E3136")
-    );
+    let mut header_meta_bytes = decode_hex_str(String::from(
+        "524544495330303131FA0972656469732D76657206362E302E3136",
+    ));
     // 1.2 End of file in bytes
     let end_bytes = decode_hex_str(String::from("FF893bb74ef80f7719"));
-    
+
     // 1.3 Fetch/Read all key-pairs from map and turn them into bytes
 
     // 1.4 Concat key-pairs bytes
@@ -73,7 +71,7 @@ pub async fn save(rdb: Arc<Mutex<RDB>>) -> Result<(), RedisErrors> {
 
     // 2. Save the .rdb file inside the directory path
     fs::write(rdb_m_gaurd.rdb_filepath().await, header_meta_bytes)?;
-    
+
     Ok(())
 }
 

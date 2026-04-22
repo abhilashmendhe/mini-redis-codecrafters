@@ -1,9 +1,15 @@
-use std::{sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf, sync::Mutex};
 
-use crate::basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}};
-
+use crate::basics::{
+    all_types::SharedMapT,
+    basic_ops::insert,
+    kv_ds::{Value, ValueStruct},
+};
 
 pub async fn master_reader_handle(
     commands: Vec<Vec<String>>,
@@ -17,7 +23,7 @@ pub async fn master_reader_handle(
     for (_ind, cmd) in commands.iter().enumerate() {
         // println!("In master_reader_handle - {:?}", cmd);
         if cmd[1].ne("REPLCONF") {
-            let total_len = format!("*{}",cmd.len()/2 + 2);
+            let total_len = format!("*{}", cmd.len() / 2 + 2);
             let mut tbyte_count = total_len.len() + 2;
             for c in cmd {
                 tbyte_count += c.len() + 2;
@@ -42,21 +48,22 @@ pub async fn master_reader_handle(
                 value_struct.set_pxat(Some(now_ms));
             }
             insert(key.to_string(), value_struct, kv_map.clone()).await;
-            
         } else if cmd.get(1).map(|s| s.as_str()) == Some("REPLCONF") {
             let _ack = cmd[3].as_str();
             let _commands = cmd[5].as_str();
-            let recv_byte_counts = {
-                *recv_bytes_count.lock().await
-            };
+            let recv_byte_counts = { *recv_bytes_count.lock().await };
             let recv_byte_cnt_str = format!("{}", recv_byte_counts);
-            let repl_ack = format!("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${}\r\n{}\r\n",recv_byte_cnt_str.len(),recv_byte_counts);
+            let repl_ack = format!(
+                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${}\r\n{}\r\n",
+                recv_byte_cnt_str.len(),
+                recv_byte_counts
+            );
             // println!("Writing ack back to master\n:{}",repl_ack);
             {
                 let mut writer_gaurd = writer.lock().await;
                 let _ = writer_gaurd.write(repl_ack.as_bytes()).await;
             }
-            let total_len = format!("*{}",cmd.len()/2 + 2);
+            let total_len = format!("*{}", cmd.len() / 2 + 2);
             let mut tbyte_count = total_len.len() + 2;
             for c in cmd {
                 tbyte_count += c.len() + 2;
@@ -64,7 +71,6 @@ pub async fn master_reader_handle(
             {
                 *recv_bytes_count.lock().await += tbyte_count;
             }
-            
         }
     }
 }

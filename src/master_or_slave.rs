@@ -1,9 +1,9 @@
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use tokio::net::TcpListener;
 use tokio::signal;
-use tokio::sync::{Mutex, Notify, RwLock, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify, RwLock};
 
 use crate::acl::Acl;
 use crate::basics::kv_ds::ValueStruct;
@@ -21,11 +21,14 @@ pub async fn run_master(
     kv_map: Arc<Mutex<HashMap<String, ValueStruct>>>,
     rdb: Arc<Mutex<RDB>>,
     server_info: Arc<Mutex<ServerInfo>>,
-    replica_info: Arc<Mutex<ReplicaInfo>>
+    replica_info: Arc<Mutex<ReplicaInfo>>,
 ) -> Result<(), RedisErrors> {
-
     let server_info_gaurd = server_info.lock().await;
-    let ip_port = format!("{}:{}",server_info_gaurd.listener_info.bind_ipv4(),server_info_gaurd.listener_info.port());
+    let ip_port = format!(
+        "{}:{}",
+        server_info_gaurd.listener_info.bind_ipv4(),
+        server_info_gaurd.listener_info.port()
+    );
     let listener = TcpListener::bind(ip_port).await?;
     std::mem::drop(server_info_gaurd);
 
@@ -34,9 +37,12 @@ pub async fn run_master(
     let store_commands: Arc<Mutex<VecDeque<Vec<u8>>>> = Arc::new(Mutex::new(VecDeque::new()));
     let slave_ack_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
     let notify_replica = Arc::new(Notify::new());
-    let blpop_clients_queue: Arc<Mutex<VecDeque<(SocketAddr,oneshot::Sender<(String,SocketAddr)>)>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let blpop_clients_queue: Arc<
+        Mutex<VecDeque<(SocketAddr, oneshot::Sender<(String, SocketAddr)>)>>,
+    > = Arc::new(Mutex::new(VecDeque::new()));
     // let multi_command_map = Arc::new(Mutex::new(HashMap::new()));
-    let xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let xread_clients_queue: Arc<Mutex<VecDeque<SocketAddr>>> =
+        Arc::new(Mutex::new(VecDeque::new()));
     let pub_sub_map: SharedPubSubType = Arc::new(Mutex::new(HashMap::new()));
 
     // Acl
@@ -44,7 +50,7 @@ pub async fn run_master(
 
     // Total client counts
     let total_client_counts = Arc::new(RwLock::new(0));
-    
+
     loop {
         tokio::select! {
             res_acc = listener.accept() => {
@@ -53,7 +59,7 @@ pub async fn run_master(
 
                         // channel to send/recv commands
                         let (tx, rx) = mpsc::unbounded_channel::<(SocketAddr, Vec<u8>)>();
-                        
+
                         // fetch acl value for `default` user from acl_t
                         let acl_nopass = {
                             let acl_t_gaurd = acl_t.lock().await;
@@ -63,10 +69,10 @@ pub async fn run_master(
                         // insert client info to the HashMap
                         {
                             let conn_struct = ConnectionStruct::new(
-                                tx.clone(),     
-                                false, 
-                                VecDeque::new(), 
-                                false, 
+                                tx.clone(),
+                                false,
+                                VecDeque::new(),
+                                false,
                                 BTreeSet::new(),
                                 acl_nopass
                             );
@@ -97,12 +103,12 @@ pub async fn run_master(
                         // Spawn thread for reader task
                         tokio::spawn(async move {
                             read_handler(
-                                reader, 
-                                sock_addr, 
-                                connections1, 
-                                kv_map1, 
-                                rdb1, 
-                                server_info1, 
+                                reader,
+                                sock_addr,
+                                connections1,
+                                kv_map1,
+                                rdb1,
+                                server_info1,
                                 replica_info1,
                                 slave_ack_set1,
                                 slave_ack_count1,
@@ -115,7 +121,7 @@ pub async fn run_master(
                                 total_client_counts1,
                                 // multi_command_map1
                                 acl_t1,
-                                
+
                             ).await
                         });
 

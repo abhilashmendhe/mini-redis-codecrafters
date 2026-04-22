@@ -1,11 +1,14 @@
-use crate::{basics::all_types::SharedMapT, errors::RedisErrors, geospatial::{decode_coords::decode_coords, geodist_ops::havenstine}};
+use crate::{
+    basics::all_types::SharedMapT,
+    errors::RedisErrors,
+    geospatial::{decode_coords::decode_coords, geodist_ops::havenstine},
+};
 
 pub async fn geosearch(
     key: &str,
     set_values: &Vec<String>,
-    kv_ds: SharedMapT
+    kv_ds: SharedMapT,
 ) -> Result<String, RedisErrors> {
-    
     let lon = &set_values[1];
     let lat = &set_values[2];
     let dist = match &set_values[4].trim().parse::<f64>() {
@@ -34,8 +37,8 @@ pub async fn geosearch(
                             count += 1;
                         }
                     }
-                    output = format!("*{}\r\n{}",count, sub_output);
-                },
+                    output = format!("*{}\r\n{}", count, sub_output);
+                }
                 _ => {}
             }
         }

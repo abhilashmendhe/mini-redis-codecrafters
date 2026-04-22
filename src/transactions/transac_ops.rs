@@ -1,25 +1,30 @@
 use std::net::SocketAddr;
 
-use crate::{basics::{all_types::SharedMapT, basic_ops::insert, kv_ds::{Value, ValueStruct}}, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, transactions::commands::handle_transaction_commands};
+use crate::{
+    basics::{
+        all_types::SharedMapT,
+        basic_ops::insert,
+        kv_ds::{Value, ValueStruct},
+    },
+    connection_handling::SharedConnectionHashMapT,
+    errors::RedisErrors,
+    transactions::commands::handle_transaction_commands,
+};
 
-pub async fn incr_ops(
-    key: String,
-    kv_map: SharedMapT,
-) -> Result<String, RedisErrors> {
-
+pub async fn incr_ops(key: String, kv_map: SharedMapT) -> Result<String, RedisErrors> {
     let mut form = String::new();
     let f = {
-        if let Some(value_struct)  = kv_map.lock().await.get_mut(&key) {
+        if let Some(value_struct) = kv_map.lock().await.get_mut(&key) {
             match value_struct.mut_value() {
                 Value::STRING(_) => {
                     form.push_str("-ERR value is not an integer or out of range\r\n");
-                },
+                }
                 Value::NUMBER(num) => {
                     *num += 1;
                     form.push(':');
                     form.push_str(&*num.to_string());
                     form.push_str("\r\n");
-                },
+                }
                 _ => {}
             }
             false
@@ -29,10 +34,10 @@ pub async fn incr_ops(
     };
     if f {
         let value_struct = ValueStruct::new(
-            // value.to_string(), 
+            // value.to_string(),
             Value::NUMBER(1),
-            None, 
-            None, 
+            None,
+            None,
         );
 
         // if let Some(px) = px {
@@ -48,14 +53,13 @@ pub async fn incr_ops(
         form.push('1');
         form.push_str("\r\n");
     }
-    
+
     Ok(form)
 }
 
-
 pub async fn multi(
     sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT
+    connections: SharedConnectionHashMapT,
 ) -> Result<String, RedisErrors> {
     {
         let client_port = sock_addr.port();
@@ -67,7 +71,7 @@ pub async fn multi(
             commands_trans_vec.push_back(super::commands::CommandTransactions::Multi);
         }
     }
-    
+
     let form = "+OK\r\n".to_string();
     Ok(form)
 }
@@ -75,9 +79,8 @@ pub async fn multi(
 pub async fn exec_multi(
     sock_addr: SocketAddr,
     kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT
+    connections: SharedConnectionHashMapT,
 ) -> Result<String, RedisErrors> {
-    
     let mut form = String::new();
     {
         let client_port = sock_addr.port();
@@ -92,7 +95,6 @@ pub async fn exec_multi(
                 form.push_str("*0\r\n");
                 commands_transac.clear();
             } else {
-
                 let _ = commands_transac.pop_front(); // Remove `MULTI`
                 let cmd_len = commands_transac.len();
                 form.push('*');
@@ -100,8 +102,13 @@ pub async fn exec_multi(
                 form.push_str("\r\n");
 
                 while let Some(command) = commands_transac.pop_front() {
-                    
                     let ret_str = handle_transaction_commands(command, kv_map.clone()).await?;
+                    println!("Extracting commands after EXEC");
+                    if ret_str.eq("-ABORT\r\n") {
+                        commands_transac.clear();
+                        println!("Cleared commands trans. Aborted because of WATCH inside MULTI.");
+                        return Ok(ret_str);
+                    }
                     form.push_str(&ret_str);
                 }
                 // form.push_str("+OK\r\n");
@@ -115,9 +122,8 @@ pub async fn exec_multi(
 
 pub async fn discard_multi(
     sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT
+    connections: SharedConnectionHashMapT,
 ) -> Result<String, RedisErrors> {
-    
     let mut form = String::new();
     {
         let client_port = sock_addr.port();

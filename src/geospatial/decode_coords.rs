@@ -1,9 +1,8 @@
 use crate::geospatial::encode_coords::*;
 
 pub fn decode_coords(geo_score: u64) -> (f64, f64) {
-
     let longitude = geo_score >> 1;
-    let latitude  = geo_score;
+    let latitude = geo_score;
 
     // # Compact both latitude and longitude back to 32-bit integers
     let grid_latitude_number = compact_int64_to_int32(latitude);
@@ -33,17 +32,24 @@ fn compact_int64_to_int32(v: u64) -> u64 {
     // # Before compacting: 0   v1  ...   0   v16  ... 0  v31  0  v32
     // # After compacting: v1  v2  ...  v31  v32
     // # -----
-    
+
     return v;
 }
 
-fn convert_grid_numbers_to_coordinates(grid_latitude_number: u64, grid_longitude_number: u64) -> (f64, f64) {
+fn convert_grid_numbers_to_coordinates(
+    grid_latitude_number: u64,
+    grid_longitude_number: u64,
+) -> (f64, f64) {
     // # Calculate the grid boundaries
-    let grid_latitude_min = MIN_LATITUDE + LATITUDE_RANGE * (grid_latitude_number as f64 / (2_f64.powf(26.0)));
-    let grid_latitude_max = MIN_LATITUDE + LATITUDE_RANGE * ((grid_latitude_number + 1) as f64  / (2_f64.powf(26.0)));
-    let grid_longitude_min = MIN_LONGITUDE + LONGITUDE_RANGE * (grid_longitude_number as f64 / (2_f64.powf(26.0)));
-    let grid_longitude_max = MIN_LONGITUDE + LONGITUDE_RANGE * ((grid_longitude_number + 1) as f64  / (2_f64.powf(26.0)));
-    
+    let grid_latitude_min =
+        MIN_LATITUDE + LATITUDE_RANGE * (grid_latitude_number as f64 / (2_f64.powf(26.0)));
+    let grid_latitude_max =
+        MIN_LATITUDE + LATITUDE_RANGE * ((grid_latitude_number + 1) as f64 / (2_f64.powf(26.0)));
+    let grid_longitude_min =
+        MIN_LONGITUDE + LONGITUDE_RANGE * (grid_longitude_number as f64 / (2_f64.powf(26.0)));
+    let grid_longitude_max =
+        MIN_LONGITUDE + LONGITUDE_RANGE * ((grid_longitude_number + 1) as f64 / (2_f64.powf(26.0)));
+
     // # Calculate the center point of the grid cell
     let latitude = (grid_latitude_min + grid_latitude_max) as f64 / 2.0;
     let longitude = (grid_longitude_min + grid_longitude_max) as f64 / 2.0;

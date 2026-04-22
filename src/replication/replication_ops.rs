@@ -1,8 +1,20 @@
-use std::{collections::{HashSet, VecDeque}, net::SocketAddr, sync::Arc};
+use std::{
+    collections::{HashSet, VecDeque},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use tokio::sync::{Mutex, Notify};
 
-use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors, handle_client::send_to_client, replication::{propagate_cmds::{propagate_master_commands, propagate_replconf_getack}, replica_info::ReplicaInfo}};
+use crate::{
+    connection_handling::SharedConnectionHashMapT,
+    errors::RedisErrors,
+    handle_client::send_to_client,
+    replication::{
+        propagate_cmds::{propagate_master_commands, propagate_replconf_getack},
+        replica_info::ReplicaInfo,
+    },
+};
 
 pub async fn replconf_ops(
     cmds: &Vec<String>,
@@ -13,12 +25,11 @@ pub async fn replconf_ops(
     notify_replica: Arc<Notify>,
     slave_ack_set: Arc<Mutex<HashSet<u16>>>,
 ) -> Result<(), RedisErrors> {
-
     if cmds[1].eq("listening-port") {
         println!("Received 2nd handshake for Replconf!");
         let _port = cmds[2].parse::<u16>()?;
         let _ip = sock_addr.ip().to_string();
-        
+
         replica_info.lock().await.add_slave(_ip, _port);
         if let Some(conn_struct) = connections.lock().await.get_mut(&sock_addr.port()) {
             conn_struct.flag = true;
@@ -29,11 +40,10 @@ pub async fn replconf_ops(
     } else if cmds[1].eq("capa") {
         println!("Received 3nd handshake for Replconf psync!");
         send_to_client(&connections, &sock_addr, b"OK\r\n").await?;
-        
     } else if cmds[1].eq("ACK") {
         // println!("Received ACK from replica!");
         // println!("Store reply here...");
-        
+
         // Increase reply count
         {
             *slave_ack_count.lock().await += 1;
@@ -50,9 +60,8 @@ pub async fn psync_ops(
     connections: SharedConnectionHashMapT,
     slave_ack_set: Arc<Mutex<HashSet<u16>>>,
 ) -> Result<(), RedisErrors> {
-
     println!("Receieved final handshake for PSYNC ?");
-                    
+
     // if let Some(client_tx) = connections.lock().await.get(&sock_addr.port()) {
     //     client_tx.send((sock_addr, b"+FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0\r\n".to_vec()))?;
     // }
@@ -87,13 +96,11 @@ pub async fn wait_repl(
     connections: SharedConnectionHashMapT,
     replica_info: Arc<Mutex<ReplicaInfo>>,
     slave_ack_count: Arc<Mutex<usize>>,
-    notify_replica: Arc<Notify>,        
+    notify_replica: Arc<Notify>,
     command_init_for_replica: Arc<Mutex<bool>>,
-    store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>
+    store_commands: Arc<Mutex<VecDeque<Vec<u8>>>>,
 ) -> Result<(), RedisErrors> {
-    let conn_slaves = {
-        replica_info.lock().await.connected_slaves()
-    };
+    let conn_slaves = { replica_info.lock().await.connected_slaves() };
     let mut store_commands_len = 0;
     if conn_slaves > 0 {
         // Propagate commands
@@ -103,25 +110,21 @@ pub async fn wait_repl(
             println!("store_commands_len: {}", store_commands_len);
             while let Some(buffer) = store_commands_gaurd.pop_front() {
                 let connections1 = Arc::clone(&connections);
-                propagate_master_commands(
-                    sock_addr, 
-                    connections1, 
-                    buffer
-                ).await?;
+                propagate_master_commands(sock_addr, connections1, buffer).await?;
             }
             store_commands_len
         };
         store_commands_len = vecdeque_len;
-        // Propagate "REPLCONF GETACK *" to replicas     
-        if vecdeque_len > 0 {              
+        // Propagate "REPLCONF GETACK *" to replicas
+        if vecdeque_len > 0 {
             let connections1 = Arc::clone(&connections);
             propagate_replconf_getack(sock_addr, connections1).await?;
             // Sleep for the desired amount of time...
             let timeout_millis = cmds[2].parse::<u64>()?;
-            
-            let t1 = tokio::spawn(
-            tokio::time::sleep(std::time::Duration::from_millis(timeout_millis))
-            );
+
+            let t1 = tokio::spawn(tokio::time::sleep(std::time::Duration::from_millis(
+                timeout_millis,
+            )));
             let t2 = tokio::spawn({
                 let count = slave_ack_count.clone();
                 let notify_replica = notify_replica.clone();
@@ -147,10 +150,10 @@ pub async fn wait_repl(
             }
         }
     };
-        // store_commands_len = store_commands_len;
+    // store_commands_len = store_commands_len;
     println!("\nDone sleeping for WAIT!");
 
-    // // Propagate "REPLCONF GETACK *" to replicas                   
+    // // Propagate "REPLCONF GETACK *" to replicas
     // let connections1 = Arc::clone(&connections);
     // propagate_replconf_getack(sock_addr, connections1).await?;
     let mut reply_ack_slave_count = 0;
@@ -162,7 +165,7 @@ pub async fn wait_repl(
         };
         reply_ack_slave_count = replyackslavecount;
     }
-    println!("Reply slave count: {}",reply_ack_slave_count);
+    println!("Reply slave count: {}", reply_ack_slave_count);
     if let Some(conn_struct) = connections.lock().await.get(&sock_addr.port()) {
         let connected_slaves = {
             if *command_init_for_replica.lock().await {
@@ -171,11 +174,13 @@ pub async fn wait_repl(
                 conn_slaves as usize
             }
         };
-        
+
         let form = format!(":{}\r\n", connected_slaves);
         let client_tx = conn_struct.tx_sender.clone();
-        client_tx.send((sock_addr,form.as_bytes().to_vec()))?;
+        client_tx.send((sock_addr, form.as_bytes().to_vec()))?;
     }
-    {   *slave_ack_count.lock().await = 0;   }
+    {
+        *slave_ack_count.lock().await = 0;
+    }
     Ok(())
 }

@@ -1,12 +1,13 @@
-use crate::{basics::all_types::SharedMapT, errors::RedisErrors, kv_lists::list_ops_utils::compute_index};
+use crate::{
+    basics::all_types::SharedMapT, errors::RedisErrors, kv_lists::list_ops_utils::compute_index,
+};
 
 pub async fn zrange(
     key: &str,
     start: &String,
     stop: &String,
-    kv_ds: SharedMapT
+    kv_ds: SharedMapT,
 ) -> Result<String, RedisErrors> {
-    
     let mut form = String::new();
 
     {
@@ -14,7 +15,6 @@ pub async fn zrange(
         if let Some(vs) = kv_gaurd.get(key) {
             match vs.value() {
                 crate::basics::kv_ds::Value::SORTED_SET(btree_set) => {
-                    
                     let sorted_set_len = btree_set.len();
                     let start = compute_index(start, sorted_set_len as i64).await?;
                     let stop = compute_index(stop, sorted_set_len as i64).await?;
@@ -23,14 +23,14 @@ pub async fn zrange(
                     } else {
                         let stop = {
                             if stop > sorted_set_len as i64 {
-                                sorted_set_len as  i64
+                                sorted_set_len as i64
                             } else {
                                 stop
                             }
                         };
                         let mut repl_str = String::new();
                         let mut count = 0;
-                        
+
                         for (ind, item) in btree_set.iter().enumerate() {
                             if ind as i64 >= start && ind as i64 <= stop {
                                 repl_str.push('$');
@@ -43,8 +43,7 @@ pub async fn zrange(
                         }
                         form.push_str(&format!("*{}\r\n{}", count, repl_str));
                     }
-
-                },
+                }
                 _ => {}
             }
         } else {
@@ -53,4 +52,3 @@ pub async fn zrange(
     }
     Ok(form)
 }
-

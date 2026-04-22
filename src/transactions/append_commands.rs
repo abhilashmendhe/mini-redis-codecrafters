@@ -1,13 +1,13 @@
 use std::net::SocketAddr;
 
-use crate::{connection_handling::SharedConnectionHashMapT, transactions::commands::CommandTransactions};
-
+use crate::{
+    connection_handling::SharedConnectionHashMapT, transactions::commands::CommandTransactions,
+};
 
 pub async fn get_command_trans_len(
     sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT
+    connections: SharedConnectionHashMapT,
 ) -> usize {
-    
     let conn_gaurd = connections.lock().await;
     if let Some(conn_struct) = conn_gaurd.get(&sock_addr.port()) {
         conn_struct.get_command_vec().len()
@@ -19,8 +19,8 @@ pub async fn get_command_trans_len(
 pub async fn append_transaction_to_commands(
     command_trans: CommandTransactions,
     sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT) -> String {
-        
+    connections: SharedConnectionHashMapT,
+) -> String {
     let mut conn_gaurd = connections.lock().await;
     if let Some(conn_struct) = conn_gaurd.get_mut(&sock_addr.port()) {
         let commands_trans_vec = conn_struct.mut_get_command_vec();

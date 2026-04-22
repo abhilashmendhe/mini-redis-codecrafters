@@ -1,16 +1,16 @@
 pub mod zadd_ops;
-pub mod zrank_ops;
-pub mod zrange_ops;
 pub mod zcard_ops;
-pub mod zscore_ops;
+pub mod zrange_ops;
+pub mod zrank_ops;
 pub mod zrem_ops;
+pub mod zscore_ops;
 
 use std::cmp::Ordering;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct SortedSetValues {
     pub v1: f64,
-    pub v2: String
+    pub v2: String,
 }
 
 impl Eq for SortedSetValues {}
@@ -26,7 +26,7 @@ impl Ord for SortedSetValues {
                     ord
                 }
             }
-            None => Ordering::Equal, 
+            None => Ordering::Equal,
         }
     }
 }

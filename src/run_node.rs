@@ -2,10 +2,19 @@ use std::{env::args, sync::Arc};
 
 use tokio::signal;
 
-use crate::{ basics::basic_ops::{clean_map, init_map}, connection_handling::init_connection_channel, errors::RedisErrors, master_or_slave::run_master, redis_server_info::init_sever_info, replication::{handshake_proto::handshake, replica_info::init_replica_info}};
+use crate::{
+    basics::basic_ops::{clean_map, init_map},
+    connection_handling::init_connection_channel,
+    errors::RedisErrors,
+    master_or_slave::run_master,
+    redis_server_info::init_sever_info,
+    replication::{handshake_proto::handshake, replica_info::init_replica_info},
+};
 
-use crate::rdb_persistence::{rdb_persist::{init_rdb, save}, read_rdb::read_rdb_file};
-
+use crate::rdb_persistence::{
+    rdb_persist::{init_rdb, save},
+    read_rdb::read_rdb_file,
+};
 
 pub async fn run_redis_node() -> Result<(), RedisErrors> {
     // 1. Read args for RDB persistence and check if folder and file(.rdb) exists
@@ -18,15 +27,15 @@ pub async fn run_redis_node() -> Result<(), RedisErrors> {
     let replica_info = init_replica_info(&args).await?;
 
     let rdb = init_rdb(&args)?;
-    
+
     let map = init_map();
 
     let map1 = Arc::clone(&map);
     match read_rdb_file(rdb.clone(), map1).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_e) => {
             save(rdb.clone()).await?;
-        },
+        }
     }
 
     // // Read keys and values periodically to check if client is inserted on not
@@ -42,8 +51,6 @@ pub async fn run_redis_node() -> Result<(), RedisErrors> {
         let _ = clean_map(map2).await;
     });
 
-    
-    
     let replica_info1 = Arc::clone(&replica_info);
     let replica_info_gaurd = replica_info1.lock().await;
     let role = replica_info_gaurd.role();
@@ -56,13 +63,7 @@ pub async fn run_redis_node() -> Result<(), RedisErrors> {
     let server_info1 = Arc::clone(&server_info);
     let replica_info1 = Arc::clone(&replica_info);
     tokio::spawn(async move {
-        let _ = run_master(
-            connections1, 
-            kv_map1, 
-            rdb1, 
-            server_info1, 
-            replica_info1
-        ).await;
+        let _ = run_master(connections1, kv_map1, rdb1, server_info1, replica_info1).await;
     });
 
     // spawn the replica handshake loop
@@ -87,8 +88,9 @@ pub async fn run_redis_node() -> Result<(), RedisErrors> {
                 kv_map2.clone(),
                 rdb2.clone(),
                 server_info2.clone(),
-                replica_info2.clone()
-            ).await;
+                replica_info2.clone(),
+            )
+            .await;
 
             match result {
                 Ok(_) => println!("Handshake finished... (or disconnected...)"),
@@ -113,6 +115,6 @@ pub async fn run_redis_node() -> Result<(), RedisErrors> {
     println!("Node shutting down after Ctrl-C");
 
     println!("Gracefully shutting down redis node by {role}!");
-    save(rdb.clone()).await?; 
+    save(rdb.clone()).await?;
     Ok(())
 }

@@ -1,8 +1,16 @@
-use std::{collections::{HashMap, VecDeque}, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use tokio::sync::Mutex;
 
-use crate::{basics::{all_types::SharedMapT, kv_ds::Value}, errors::RedisErrors, get_current_unix_time, streams::stream_struct::StreamValue};
+use crate::{
+    basics::{all_types::SharedMapT, kv_ds::Value},
+    errors::RedisErrors,
+    get_current_unix_time,
+    streams::stream_struct::StreamValue,
+};
 
 pub async fn get_stream_value(s: &str) -> StreamValue {
     // match stream
@@ -15,26 +23,20 @@ pub async fn get_stream_value(s: &str) -> StreamValue {
     }
 }
 
-pub async fn extract_stream_data(
-    stream_data: Vec<String>
-) -> VecDeque<(String, StreamValue)> {
-    
+pub async fn extract_stream_data(stream_data: Vec<String>) -> VecDeque<(String, StreamValue)> {
     let mut i = 0;
     let mut pairs_values = VecDeque::new();
 
     while i < stream_data.len() {
         let k = stream_data[i].to_string();
-        let v = get_stream_value(&stream_data[i+1]).await;
+        let v = get_stream_value(&stream_data[i + 1]).await;
         pairs_values.push_back((k, v));
         i += 2;
     }
     pairs_values
 }
 
-pub async fn extract_stream_id(
-    stream_id: String
-) -> Result<(u128, isize), RedisErrors> {
-    
+pub async fn extract_stream_id(stream_id: String) -> Result<(u128, isize), RedisErrors> {
     if stream_id.eq("*") {
         let epoch = get_current_unix_time().await?;
         Ok((epoch, 0))
@@ -43,58 +45,60 @@ pub async fn extract_stream_id(
     } else if stream_id.eq("+") {
         Ok((0, -5))
     } else {
-
         let mut id_spl = stream_id.split("-");
-        
+
         let epoch = if let Some(unix_time) = id_spl.next() {
             unix_time.parse::<u128>()?
-        } else { 0 };
+        } else {
+            0
+        };
 
-        let seq_number = 
-            if let Some(seq_num) = id_spl.next() {
-                if seq_num.eq("*") {
-                    -1
-                } else {
-                    seq_num.parse::<isize>()?
-                }
-            } else { -1 };
-        
+        let seq_number = if let Some(seq_num) = id_spl.next() {
+            if seq_num.eq("*") {
+                -1
+            } else {
+                seq_num.parse::<isize>()?
+            }
+        } else {
+            -1
+        };
+
         Ok((epoch, seq_number))
     }
 }
 
 pub async fn get_stream_key_last_value(
-    stream_key: &String, 
-    stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>>
+    stream_key: &String,
+    stream_key_last_value: Arc<Mutex<HashMap<String, (u128, isize)>>>,
 ) -> (u128, isize) {
-
     let sklv_gaurd = stream_key_last_value.lock().await;
-    if let Some((epoch, seq_num)) = sklv_gaurd.get(stream_key){
+    if let Some((epoch, seq_num)) = sklv_gaurd.get(stream_key) {
         (*epoch, *seq_num)
     } else {
-        (10,-10)
+        (10, -10)
     }
 }
 
 pub async fn set_stream_last_value(
-    stream_key: &String, 
+    stream_key: &String,
     kv_map: SharedMapT,
-    stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>>
+    stream_key_last_value: Arc<Mutex<HashMap<String, (u128, isize)>>>,
 ) {
     let mut epoch = 0_u128;
     let mut seq_num = 0_isize;
-    {let kv_map_gaurd = kv_map.lock().await;
-    if let Some(vs) = kv_map_gaurd.get(stream_key) {
-        if let Value::STREAM(stream_list) = vs.value() {
-            if let Some(last_ss) = stream_list.back() {
-                epoch = last_ss.epoch;
-                seq_num = last_ss.seq_number as isize;
-            }
-
-        }
-    }}
     {
-       let mut sklv_gaurd = stream_key_last_value.lock().await;
+        let kv_map_gaurd = kv_map.lock().await;
+        if let Some(vs) = kv_map_gaurd.get(stream_key) {
+            if let Value::STREAM(stream_list) = vs.value() {
+                if let Some(last_ss) = stream_list.back() {
+                    epoch = last_ss.epoch;
+                    seq_num = last_ss.seq_number as isize;
+                }
+            }
+        }
+    }
+    {
+        let mut sklv_gaurd = stream_key_last_value.lock().await;
         if !sklv_gaurd.contains_key(stream_key) {
             sklv_gaurd.insert(stream_key.to_string(), (epoch, seq_num));
         }
@@ -104,21 +108,19 @@ pub async fn set_stream_last_value(
 pub async fn extract_stream_read_data_block(
     streams_ids: Vec<String>,
     kv_map: SharedMapT,
-    stream_key_last_value: Arc<Mutex<HashMap<String, (u128,isize)>>>
-    // tx: Arc<>
+    stream_key_last_value: Arc<Mutex<HashMap<String, (u128, isize)>>>, // tx: Arc<>
 ) -> Result<Option<String>, RedisErrors> {
-
     let mut form = String::new();
     let mut ind = 0;
     let mid = streams_ids.len() / 2;
     // println!("searching for stream_read_data_block");
     // println!("{:?}",streams_ids);
     let mut temp1 = String::new();
-    temp1.push_str(&format!("*{}\r\n",mid));
+    temp1.push_str(&format!("*{}\r\n", mid));
     let mut found_data = false;
     while ind < mid {
         let stream_key = &streams_ids[ind];
-        let stream_id = &streams_ids[ind+mid];
+        let stream_id = &streams_ids[ind + mid];
         if stream_id.eq("$") {
             set_stream_last_value(&stream_key, kv_map.clone(), stream_key_last_value.clone()).await;
         }
@@ -132,29 +134,31 @@ pub async fn extract_stream_read_data_block(
         {
             let kv_map_gaurd = kv_map.lock().await;
             if let Some(vs) = kv_map_gaurd.get(stream_key) {
-
                 let mut c2 = 0;
                 let mut temp2 = String::new();
                 temp1.push_str("*2\r\n");
-                temp1.push_str(&format!("${}\r\n{}\r\n",stream_key.len().to_string(), stream_key));
+                temp1.push_str(&format!(
+                    "${}\r\n{}\r\n",
+                    stream_key.len().to_string(),
+                    stream_key
+                ));
                 if let Value::STREAM(stream_list) = vs.value() {
-                    
                     // println!("List is present!");
                     for ss in stream_list {
-                        if (ss.epoch == epoch && ss.seq_number > seq_num as usize) || (ss.epoch > epoch) {
+                        if (ss.epoch == epoch && ss.seq_number > seq_num as usize)
+                            || (ss.epoch > epoch)
+                        {
                             c2 += 1;
                             temp2.push_str(&ss.to_string());
                             // return Ok(Some("+FOUNDATA\r\n".to_string()));
-                        } 
+                        }
                     }
-
                 }
                 if c2 > 0 {
                     found_data = true;
                     temp1.push_str(&format!("*{}\r\n", c2));
                     temp1.push_str(&temp2);
                 }
-                
             } else {
                 return Ok(None);
             }
@@ -175,25 +179,23 @@ pub async fn extract_stream_read_data_block(
 
 pub async fn extract_stream_read_data(
     streams_ids: Vec<String>,
-    kv_map: SharedMapT
+    kv_map: SharedMapT,
 ) -> Result<String, RedisErrors> {
-
     let mut form = String::new();
     let st_ids_size = streams_ids.len();
     let mut ind = 0;
     let mid = st_ids_size / 2;
 
     let mut temp1 = String::new();
-    
-    temp1.push_str(&format!("*{}\r\n",mid));
-    
+
+    temp1.push_str(&format!("*{}\r\n", mid));
+
     while ind < mid {
-        
         let stream_key = &streams_ids[ind];
-        let stream_id = &streams_ids[ind+mid];
+        let stream_id = &streams_ids[ind + mid];
         // println!("stream_key: {}, stream_id: {}", stream_key, stream_id);
         let (epoch, seq_num) = extract_stream_id(stream_id.to_string()).await?;
-        
+
         {
             let kv_map_gaurd = kv_map.lock().await;
             if let Some(vs) = kv_map_gaurd.get(stream_key) {
@@ -201,10 +203,13 @@ pub async fn extract_stream_read_data(
                 let mut c2 = 0;
                 let mut temp2 = String::new();
                 temp1.push_str("*2\r\n");
-                temp1.push_str(&format!("${}\r\n{}\r\n",stream_key.len().to_string(), stream_key));
+                temp1.push_str(&format!(
+                    "${}\r\n{}\r\n",
+                    stream_key.len().to_string(),
+                    stream_key
+                ));
                 if let Value::STREAM(stream_list) = vs.value() {
                     for ss in stream_list {
-                        
                         if epoch == ss.epoch {
                             if ss.seq_number > seq_num as usize {
                                 // println!("{}",ss);
@@ -218,7 +223,7 @@ pub async fn extract_stream_read_data(
                         }
                     }
                 }
-                
+
                 temp1.push_str(&format!("*{}\r\n", c2));
                 temp1.push_str(&temp2);
             } else {

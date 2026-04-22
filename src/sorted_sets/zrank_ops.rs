@@ -1,11 +1,6 @@
 use crate::basics::all_types::SharedMapT;
 
-pub async fn zrank(
-    key: &str,
-    v2: &str,
-    kv_ds: SharedMapT
-) -> String {
-
+pub async fn zrank(key: &str, v2: &str, kv_ds: SharedMapT) -> String {
     let mut form = String::new();
     {
         let kv_gaurd = kv_ds.lock().await;
@@ -20,7 +15,7 @@ pub async fn zrank(
                             break;
                         }
                         rank += 1;
-                    }                    
+                    }
                     if flag {
                         form.push(':');
                         form.push_str(&rank.to_string());
@@ -28,13 +23,12 @@ pub async fn zrank(
                     } else {
                         form.push_str("$-1\r\n");
                     }
-                },
+                }
                 _ => {}
             }
         } else {
             form.push_str("$-1\r\n");
         }
-        
     }
     form
 }

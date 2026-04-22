@@ -6,22 +6,24 @@ use tokio::sync::Mutex;
 use crate::{acl::Acl, connection_handling::SharedConnectionHashMapT};
 
 pub async fn auth(
-    _user: &String, 
+    _user: &String,
     password: &String,
     acl_t: Arc<Mutex<Acl>>,
     conn: SharedConnectionHashMapT,
-    sock_addr: SocketAddr
+    sock_addr: SocketAddr,
 ) -> String {
     // 1. convert pass to sha256
     let hasher = Sha256::digest(password.as_bytes());
-    let sha256_pass:String = hasher.iter()
-                            .map(|b| format!("{:02x}", b))
-                            .collect();
-    
+    let sha256_pass: String = hasher.iter().map(|b| format!("{:02x}", b)).collect();
+
     // 2. get acl pass set
     let acl_pass_set = {
         let acl_t_guard = acl_t.lock().await;
-        acl_t_guard.passwords.iter().cloned().collect::<HashSet<String>>()
+        acl_t_guard
+            .passwords
+            .iter()
+            .cloned()
+            .collect::<HashSet<String>>()
     };
 
     if !acl_pass_set.contains(&sha256_pass) {
