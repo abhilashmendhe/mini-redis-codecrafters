@@ -38,6 +38,7 @@ pub async fn exec_multi(
                         // println!("{:?}",_err);
                         commands_transac.clear();
                         // let _ = unwatch(sock_addr, connections.clone(), kv_map.clone()).await;
+                        println!("Also need to clear watch");
                         return Ok("*-1\r\n".to_string());
                     }
                 }
