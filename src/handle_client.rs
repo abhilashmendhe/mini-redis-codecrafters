@@ -499,7 +499,7 @@ pub async fn read_handler(
                                 unwatch(sock_addr, connections.clone(), kv_map.clone()).await?;
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("DISCARD") {
-                            let form = discard_multi(sock_addr, Arc::clone(&connections1)).await?;
+                            let form = discard_multi(sock_addr, Arc::clone(&connections1), kv_map.clone()).await?;
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("XADD") {
                             let stream_key = cmds[1].to_string();

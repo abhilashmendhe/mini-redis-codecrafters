@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
 
-use crate::{connection_handling::SharedConnectionHashMapT, errors::RedisErrors};
+use crate::{basics::all_types::SharedMapT, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, optimistic_lock::unwatch::unwatch};
 
 pub async fn discard_multi(
     sock_addr: SocketAddr,
     connections: SharedConnectionHashMapT,
+    kv_map: SharedMapT
 ) -> Result<String, RedisErrors> {
     let mut form = String::new();
     {
@@ -22,5 +23,6 @@ pub async fn discard_multi(
             }
         }
     }
+    let _value = unwatch(sock_addr, connections.clone(), kv_map.clone()).await?;
     Ok(form)
 }
