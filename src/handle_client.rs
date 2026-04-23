@@ -259,6 +259,7 @@ pub async fn read_handler(
                                 } else {
                                     // check if the key is being watched?
                                     let mut if_watch = false;
+                                    let mut should_set = false;
                                     {
                                         let kv_gaurd = kv_map.lock().await;
                                         if let Some(val) = kv_gaurd.get(&key) {
@@ -275,12 +276,21 @@ pub async fn read_handler(
                                                     if_watch = true;
                                                 }
                                             }
-
-                                            // println!("In SET -> Watchers : {:?}",);
+                                            // Check if val is NOT_AVAILABLE
+                                            match val.value() {
+                                                crate::basics::kv_ds::Value::NOT_AVAILABLE => {
+                                                    should_set = true;
+                                                }
+                                                _ => {}
+                                            }
                                         }
                                     }
 
                                     if if_watch {
+                                        // check if WATCH
+                                        if should_set {
+                                            set(key, value, px, Arc::clone(&kv_map)).await?;
+                                        }
                                         "+OK\r\n".to_string()
                                     } else {
                                         let form = set(key, value, px, Arc::clone(&kv_map)).await?;
