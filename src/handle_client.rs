@@ -271,8 +271,11 @@ pub async fn read_handler(
                                                 {
                                                     let wcs_command_vec =
                                                         w_conn_struct.mut_get_command_vec();
-                                                    wcs_command_vec
-                                                        .push_back(CommandTransactions::UNWATCH);
+                                                    if wcs_command_vec.len() > 0 {
+                                                        wcs_command_vec.push_back(
+                                                            CommandTransactions::UNWATCH,
+                                                        );
+                                                    }
                                                     if_watch = true;
                                                 }
                                             }
