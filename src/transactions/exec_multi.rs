@@ -1,10 +1,7 @@
 use std::{collections::VecDeque, net::SocketAddr};
 
 use crate::{
-    basics::all_types::SharedMapT,
-    connection_handling::SharedConnectionHashMapT,
-    errors::RedisErrors,
-    transactions::commands::{handle_transaction_commands, CommandTransactions},
+    basics::all_types::SharedMapT, connection_handling::SharedConnectionHashMapT, errors::RedisErrors, optimistic_lock::unwatch::unwatch, transactions::commands::{CommandTransactions, handle_transaction_commands}
 };
 
 pub async fn exec_multi(
@@ -33,13 +30,14 @@ pub async fn exec_multi(
                 form.push_str("\r\n");
 
                 // call func `check_commmand_trans`
-                match check_handle_transactons(commands_transac, kv_map).await {
+                match check_handle_transactons(commands_transac, kv_map.clone()).await {
                     Ok(fo) => {
                         form.push_str(&fo);
                     }
                     Err(_err) => {
                         // println!("{:?}",_err);
                         commands_transac.clear();
+                        let _ = unwatch(sock_addr, connections.clone(), kv_map.clone()).await;
                         return Ok("*-1\r\n".to_string());
                     }
                 }

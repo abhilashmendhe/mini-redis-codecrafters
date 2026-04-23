@@ -24,7 +24,7 @@ use crate::{
         geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch,
     },
     kv_lists::list_ops::{blpop, llen, lpop, lrange, push},
-    optimistic_lock::watch::watch,
+    optimistic_lock::{unwatch::unwatch, watch::watch},
     parse_redis_bytes_file::try_parse_resp,
     pub_sub::{
         pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType},
@@ -494,9 +494,12 @@ pub async fn read_handler(
                                 form
                             };
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                        } else if cmds[0].eq("UNWATCH") {
+                            let form =
+                                unwatch(sock_addr, connections.clone(), kv_map.clone()).await?;
+                            send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("DISCARD") {
                             let form = discard_multi(sock_addr, Arc::clone(&connections1)).await?;
-
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("XADD") {
                             let stream_key = cmds[1].to_string();
