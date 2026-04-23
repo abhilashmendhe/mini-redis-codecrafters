@@ -37,7 +37,7 @@ pub async fn exec_multi(
                     Err(_err) => {
                         // println!("{:?}",_err);
                         commands_transac.clear();
-                        let _ = unwatch(sock_addr, connections.clone(), kv_map.clone()).await;
+                        // let _ = unwatch(sock_addr, connections.clone(), kv_map.clone()).await;
                         return Ok("*-1\r\n".to_string());
                     }
                 }
