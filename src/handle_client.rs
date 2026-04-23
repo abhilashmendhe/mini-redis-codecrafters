@@ -24,6 +24,7 @@ use crate::{
         geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch,
     },
     kv_lists::list_ops::{blpop, llen, lpop, lrange, push},
+    optimistic_lock::watch::watch,
     parse_redis_bytes_file::try_parse_resp,
     pub_sub::{
         pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType},
@@ -42,7 +43,9 @@ use crate::{
     streams::stream_ops::{type_ops, xadd, xrange, xread},
     transactions::{
         append_commands::{append_transaction_to_commands, get_command_trans_len},
-        transac_ops::{discard_multi, exec_multi, incr_ops, multi},
+        discard_multi::discard_multi,
+        exec_multi::exec_multi,
+        transac_ops::{incr_ops, multi},
     },
 };
 
@@ -254,8 +257,35 @@ pub async fn read_handler(
                                     .await;
                                     form
                                 } else {
-                                    let form = set(key, value, px, Arc::clone(&kv_map)).await?;
-                                    form
+                                    // check if the key is being watched?
+                                    let mut if_watch = false;
+                                    {
+                                        let kv_gaurd = kv_map.lock().await;
+                                        if let Some(val) = kv_gaurd.get(&key) {
+                                            for wath in val.clone().watchers() {
+                                                // Get conn command trans vecdeq
+                                                let mut conn_gaurd = connections1.lock().await;
+                                                if let Some(w_conn_struct) =
+                                                    conn_gaurd.get_mut(&wath)
+                                                {
+                                                    let wcs_command_vec =
+                                                        w_conn_struct.mut_get_command_vec();
+                                                    wcs_command_vec
+                                                        .push_back(CommandTransactions::UNWATCH);
+                                                    if_watch = true;
+                                                }
+                                            }
+
+                                            // println!("In SET -> Watchers : {:?}",);
+                                        }
+                                    }
+
+                                    if if_watch {
+                                        "+OK\r\n".to_string()
+                                    } else {
+                                        let form = set(key, value, px, Arc::clone(&kv_map)).await?;
+                                        form
+                                    }
                                 };
                                 form
                             } else {
@@ -430,7 +460,7 @@ pub async fn read_handler(
                                 Arc::clone(&connections1),
                             )
                             .await?;
-                            println!("In exec: {}",form);
+                            // println!("In exec: {}",form);
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("WATCH") {
                             let form = if cmds.len() < 2 {
@@ -442,7 +472,11 @@ pub async fn read_handler(
                                 let form = if command_transc_len > 0 {
                                     "-ERR WATCH inside MULTI is not allowed\r\n".to_string()
                                 } else {
-                                    "+OK\r\n".to_string()
+                                    let keys = &cmds[1..].to_vec();
+                                    let form =
+                                        watch(keys, sock_addr, connections.clone(), kv_map.clone())
+                                            .await?;
+                                    form
                                 };
                                 form
                             };

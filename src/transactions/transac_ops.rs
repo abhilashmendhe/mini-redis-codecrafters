@@ -8,7 +8,6 @@ use crate::{
     },
     connection_handling::SharedConnectionHashMapT,
     errors::RedisErrors,
-    transactions::commands::handle_transaction_commands,
 };
 
 pub async fn incr_ops(key: String, kv_map: SharedMapT) -> Result<String, RedisErrors> {
@@ -73,72 +72,5 @@ pub async fn multi(
     }
 
     let form = "+OK\r\n".to_string();
-    Ok(form)
-}
-
-pub async fn exec_multi(
-    sock_addr: SocketAddr,
-    kv_map: SharedMapT,
-    connections: SharedConnectionHashMapT,
-) -> Result<String, RedisErrors> {
-    let mut form = String::new();
-    {
-        let client_port = sock_addr.port();
-        let mut connections_gaurd = connections.lock().await;
-        if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
-            let commands_transac = conn_struct.mut_get_command_vec();
-            // println!("Lenth of command vec: {}",commands_transac.len());
-            // println!("Command vec: {:?}", commands_transac);
-            if commands_transac.len() == 0 {
-                form.push_str("-ERR EXEC without MULTI\r\n");
-            } else if commands_transac.len() == 1 {
-                form.push_str("*0\r\n");
-                commands_transac.clear();
-            } else {
-                let _ = commands_transac.pop_front(); // Remove `MULTI`
-                let cmd_len = commands_transac.len();
-                form.push('*');
-                form.push_str(&cmd_len.to_string());
-                form.push_str("\r\n");
-
-                while let Some(command) = commands_transac.pop_front() {
-                    let ret_str = handle_transaction_commands(command, kv_map.clone()).await?;
-                    println!("Extracting commands after EXEC");
-                    if ret_str.eq("-ABORT\r\n") {
-                        commands_transac.clear();
-                        println!("Cleared commands trans. Aborted because of WATCH inside MULTI.");
-                        return Ok(ret_str);
-                    }
-                    form.push_str(&ret_str);
-                }
-                // form.push_str("+OK\r\n");
-                // commands_transac.clear();
-            }
-        }
-    }
-
-    Ok(form)
-}
-
-pub async fn discard_multi(
-    sock_addr: SocketAddr,
-    connections: SharedConnectionHashMapT,
-) -> Result<String, RedisErrors> {
-    let mut form = String::new();
-    {
-        let client_port = sock_addr.port();
-        let mut connections_gaurd = connections.lock().await;
-        if let Some(conn_struct) = connections_gaurd.get_mut(&client_port) {
-            let commands_transac = conn_struct.mut_get_command_vec();
-            // println!("Lenth of command vec: {}",commands_transac.len());
-            // println!("Command vec: {:?}", commands_transac);
-            if commands_transac.len() == 0 {
-                form.push_str("-ERR DISCARD without MULTI\r\n");
-            } else {
-                form.push_str("+OK\r\n");
-                commands_transac.clear();
-            }
-        }
-    }
     Ok(form)
 }

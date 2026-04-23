@@ -7,7 +7,9 @@ use std::{
 
 use tokio::sync::{mpsc, Mutex};
 
-use crate::{errors::RedisErrors, transactions::commands::CommandTransactions};
+use crate::{
+    basics::kv_ds::ValueStruct, errors::RedisErrors, transactions::commands::CommandTransactions,
+};
 
 pub type ClientId = u16;
 // pub type SenderChannelT = mpsc::UnboundedSender<(SocketAddr, Vec<u8>)>;
@@ -25,6 +27,9 @@ pub struct ConnectionStruct {
 
     // Acl
     pub acl_auth: bool,
+
+    // Watch keys
+    pub watch_keys: HashMap<String, ValueStruct>,
 }
 pub type SharedConnectionHashMapT = Arc<Mutex<HashMap<ClientId, ConnectionStruct>>>;
 
@@ -36,6 +41,7 @@ impl ConnectionStruct {
         is_pub_sub: bool,
         pub_sub_channels: BTreeSet<String>,
         acl_auth: bool,
+        watch_keys: HashMap<String, ValueStruct>,
     ) -> Self {
         Self {
             tx_sender,
@@ -44,6 +50,7 @@ impl ConnectionStruct {
             is_pub_sub,
             pub_sub_channels,
             acl_auth,
+            watch_keys,
         }
     }
     // pub fn set_commands_trans(&mut self, command_trans: VecDeque<String>) {
@@ -67,6 +74,9 @@ impl ConnectionStruct {
     }
     pub fn get_acl_auth_flag(&self) -> bool {
         self.acl_auth
+    }
+    pub fn get_mut_watch_keys(&mut self) -> &mut HashMap<String, ValueStruct> {
+        &mut self.watch_keys
     }
 }
 

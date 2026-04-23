@@ -74,7 +74,8 @@ pub async fn run_master(
                                 VecDeque::new(),
                                 false,
                                 BTreeSet::new(),
-                                acl_nopass
+                                acl_nopass,
+                                HashMap::new()
                             );
                             let mut conns = connections.lock().await;
                             conns.insert(sock_addr.port(), conn_struct);

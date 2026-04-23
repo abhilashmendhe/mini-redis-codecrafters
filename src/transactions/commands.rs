@@ -23,6 +23,7 @@ pub enum CommandTransactions {
     },
     Multi,
     WATCH,
+    UNWATCH,
 }
 
 pub async fn handle_transaction_commands(
@@ -45,7 +46,9 @@ pub async fn handle_transaction_commands(
             println!("{}", form);
             Ok(form)
         }
-        CommandTransactions::Multi => Ok("-ABORT\r\n".to_string()),
-        CommandTransactions::WATCH => Ok("-ERR WATCH inside MULTI is not allowed\r\n".to_string()),
+        CommandTransactions::Multi => Ok("+OK\r\n".to_string()),
+        CommandTransactions::WATCH => Ok("-ABORT\r\n".to_string()),
+        CommandTransactions::UNWATCH => Ok("-ABORT\r\n".to_string()), // CommandTransactions::Multi => Ok("-ABORT\r\n".to_string()),
+                                                                      // CommandTransactions::WATCH => Ok("-ERR WATCH inside MULTI is not allowed\r\n".to_string()),
     }
 }

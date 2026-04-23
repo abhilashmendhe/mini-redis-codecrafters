@@ -1,14 +1,17 @@
 #![allow(unused)]
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, LinkedList, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tokio::sync::Mutex;
 
-use crate::{sorted_sets::SortedSetValues, streams::stream_struct::StreamStruct};
+use crate::{
+    connection_handling::ClientId, sorted_sets::SortedSetValues,
+    streams::stream_struct::StreamStruct,
+};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -18,6 +21,8 @@ pub enum Value {
     STREAM(LinkedList<StreamStruct>),
     #[allow(non_camel_case_types)]
     SORTED_SET(BTreeSet<SortedSetValues>), // STREAM(BTreeMap<u128, LinkedList<StreamStruct>>),
+    #[allow(non_camel_case_types)]
+    NOT_AVAILABLE,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +31,7 @@ pub struct ValueStruct {
     px: Option<u128>,   // milliseconds
     pxat: Option<u128>, // timestamp-milliseconds
     saved: bool,
+    watchers: HashSet<ClientId>,
 }
 
 impl ValueStruct {
@@ -35,6 +41,7 @@ impl ValueStruct {
             px,
             pxat,
             saved: false,
+            watchers: HashSet::new(),
         }
     }
     pub fn value(&self) -> Value {
@@ -50,6 +57,7 @@ impl ValueStruct {
             Value::LIST(items) => items.len(),
             Value::STREAM(stream_items) => stream_items.len(),
             Value::SORTED_SET(sorted_set) => sorted_set.len(), // _ => {0}
+            _ => 0,
         }
     }
     pub fn set_px(&mut self, px: Option<u128>) {
@@ -63,5 +71,11 @@ impl ValueStruct {
     }
     pub fn pxat(&self) -> Option<u128> {
         self.pxat
+    }
+    pub fn mut_watchers(&mut self) -> &mut HashSet<ClientId> {
+        &mut self.watchers
+    }
+    pub fn watchers(self) -> HashSet<ClientId> {
+        self.watchers
     }
 }

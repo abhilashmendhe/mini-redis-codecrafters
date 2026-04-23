@@ -28,4 +28,7 @@ pub enum RedisErrors {
 
     #[error("HandshakeInvalidReply: {}", 0)]
     HandhshakeInvalidReply(String),
+
+    #[error("Watcher Present")]
+    WatcherPresent,
 }

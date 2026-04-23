@@ -31,6 +31,7 @@ pub async fn type_ops(key: String, kv_map: SharedMapT) -> Result<String, RedisEr
                 Value::LIST(_) => "+list\r\n",
                 Value::STREAM(_) => "+stream\r\n",
                 Value::SORTED_SET(_) => "+zset\r\n",
+                Value::NOT_AVAILABLE => "-OK\r\n",
             };
             v_type
         } else {
