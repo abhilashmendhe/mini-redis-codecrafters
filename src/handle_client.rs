@@ -11,42 +11,28 @@ use tokio::{
 
 use crate::{
     acl::{
-        acl_auth::auth, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami,
-        Acl,
-    },
-    basics::{
+        Acl, acl_auth::auth, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami
+    }, aof::get_command_handler::get_command_handler, basics::{
         all_types::{SharedMapT, SharedRDBStructT},
         basic_ops::{get, get_pattern_match_keys, set},
-    },
-    connection_handling::{RecvChannelT, SharedConnectionHashMapT},
-    errors::RedisErrors,
-    geospatial::{
+    }, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{
         geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch,
-    },
-    kv_lists::list_ops::{blpop, llen, lpop, lrange, push},
-    optimistic_lock::{unwatch::unwatch, watch::watch},
-    parse_redis_bytes_file::try_parse_resp,
-    pub_sub::{
-        pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType},
+    }, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, optimistic_lock::{unwatch::unwatch, watch::watch}, parse_redis_bytes_file::try_parse_resp, pub_sub::{
+        pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe},
         publish_cmd::publish,
-    },
-    redis_server_info::ServerInfo,
-    replication::{
+    }, redis_server_info::ServerInfo, replication::{
         propagate_cmds::propagate_master_commands,
         replica_info::ReplicaInfo,
         replication_ops::{psync_ops, replconf_ops, wait_repl},
-    },
-    sorted_sets::{
+    }, sorted_sets::{
         zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem,
         zscore_ops::zscore,
-    },
-    streams::stream_ops::{type_ops, xadd, xrange, xread},
-    transactions::{
+    }, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{
         append_commands::{append_transaction_to_commands, get_command_trans_len},
         discard_multi::discard_multi,
         exec_multi::exec_multi,
         transac_ops::{incr_ops, multi},
-    },
+    }
 };
 
 use crate::transactions::commands::CommandTransactions;
@@ -331,34 +317,24 @@ pub async fn read_handler(
                                 }
                             }
                         } else if cmds[0] == String::from("CONFIG") {
-                            if cmds[1] == String::from("GET") {
-                                if cmds[2] == String::from("dir") {
-                                    // println!("wants to read dir");
-                                    let rdb_gaurd = rdb.lock().await;
-                                    let dirpath = rdb_gaurd.dirpath().await;
-                                    // println!("{}", dirpath);
-                                    let form = format!(
-                                        "*2\r\n$3\r\ndir\r\n${}\r\n{}\r\n",
-                                        &dirpath.len(),
-                                        dirpath
-                                    );
-                                    send_to_client(&connections, &sock_addr, form.as_bytes())
-                                        .await?;
-                                } else if cmds[2] == String::from("dbfilename") {
-                                    // println!("wants to read dbfilename");
-                                    let rdb_gaurd = rdb.lock().await;
-                                    let rdb_filepath = rdb_gaurd.rdb_filepath().await;
-                                    // println!("{}", rdb_filepath);
-                                    let form = format!(
-                                        "*2\r\n$10\r\ndbfilename\r\n${}\r\n{}\r\n",
-                                        &rdb_filepath.len(),
-                                        rdb_filepath
-                                    );
-                                    send_to_client(&connections, &sock_addr, form.as_bytes())
-                                        .await?;
-                                }
-                            } else if cmds[1] == String::from("SET") { // This is the CONFIG SET (not setting the kv)
-                            }
+                            let form = if cmds.len() < 1 {
+                                "-ERR wrong number of arguments for 'config' command\r\n"
+                                    .to_string()
+                            } else {
+                                let config_cmd = &cmds[1];
+                                let form = if config_cmd == "GET" {
+                                    let get_str = &cmds[2];
+                                    let form = get_command_handler(get_str, rdb.clone()).await?;
+                                    form
+                                } else if config_cmd == "SET" {
+                                    /* This is the CONFIG SET (not setting the kv)*/
+                                    "+OK\r\n".to_string()
+                                } else {
+                                    "+OK\r\n".to_string()
+                                };
+                                form
+                            };
+                            send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0] == String::from("KEYS") {
                             let pattern = cmds[1].to_string();
                             let form = get_pattern_match_keys(pattern, Arc::clone(&kv_map)).await;
@@ -499,7 +475,9 @@ pub async fn read_handler(
                                 unwatch(sock_addr, connections.clone(), kv_map.clone()).await?;
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("DISCARD") {
-                            let form = discard_multi(sock_addr, Arc::clone(&connections1), kv_map.clone()).await?;
+                            let form =
+                                discard_multi(sock_addr, Arc::clone(&connections1), kv_map.clone())
+                                    .await?;
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].eq("XADD") {
                             let stream_key = cmds[1].to_string();
