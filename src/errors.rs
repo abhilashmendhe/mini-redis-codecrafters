@@ -31,4 +31,7 @@ pub enum RedisErrors {
 
     #[error("Watcher Present")]
     WatcherPresent,
+
+    #[error("Incorrect number of arguments")]
+    ArgsErr,
 }

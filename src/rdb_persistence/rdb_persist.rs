@@ -29,13 +29,26 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
         let mut i = 1;
         while i < args.len() {
             let arg = args[i].as_str();
+            if i+1 >= args.len() {
+                return Err(RedisErrors::ArgsErr);
+            }
             let arg_val = args[i+1].as_str();
             match arg {
                 "--dir" => dirpath = arg_val.to_string(),
                 "--dbfilename" => rdb_filepath = format!("{}/{}", dirpath, arg_val),
                 "--appendonly" => appendonly = arg_val.to_string(),
-                "--appenddirname" => appenddirname = arg_val.to_string(),
-                "--appendfilename" => appendfilename = arg_val.to_string(),
+                "--appenddirname" => {
+                    appenddirname = arg_val.to_string();
+                    if appendonly.eq("yes") {
+                        let _ = std::fs::create_dir(format!("{}/{}",dirpath,appenddirname));
+                    }
+                },
+                "--appendfilename" => {
+                    appendfilename = arg_val.to_string();
+                    if appendonly.eq("yes") {
+                        let _ = std::fs::write(format!("{}/{}/{}",dirpath,appenddirname,appendfilename), "");
+                    }
+                },
                 "--appendfsync" => appendfsync = arg_val.to_string(),
                 _ => {}
             }
