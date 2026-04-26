@@ -1,5 +1,5 @@
-use std::{fs, sync::Arc};
-
+use std::{fs::{self, OpenOptions}, io::BufWriter, sync::Arc};
+use std::io::Write;
 use tokio::sync::Mutex;
 
 use crate::{basics::all_types::SharedRDBStructT, errors::RedisErrors};
@@ -24,7 +24,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
     let mut appenddirname = "appendonlydir".to_string();
     let mut appendfilename = "appendonly.aof".to_string();
     let mut appendfsync = "everysec".to_string();
-    println!("init_rdb ---> {:?}",args);
+    // println!("init_rdb ---> {:?}",args);
     if args.len() > 1 {
         let mut i = 1;
         while i < args.len() {
@@ -62,9 +62,34 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                                 }
                             }
                         }
-                        let nextfile = format!("{}.{}.incr.aof",appendfilename,max_n+1);
-                        println!("next file: {}",nextfile);
+                        let seq = max_n + 1;
+                        let nextfile = format!("{}.{}.incr.aof",appendfilename,seq);
+                        // println!("next file: {}",nextfile);
                         let _ = std::fs::write(format!("{}/{}/{}",dirpath,appenddirname,nextfile), "");
+
+                        // now create or add into .manifest file in the same appenddirname
+                        let manifest_file_name = format!("{}/{}/{}.manifest",dirpath, appenddirname, appendfilename);
+                        let manifest_file = match OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&manifest_file_name)
+                        {
+                            Ok(f) => f,
+                            Err(e) => {
+                                eprintln!("Failed to open file: {}", e);
+                                return Err(RedisErrors::Io(e));
+                            }
+                        };
+                        let mut writer = BufWriter::new(manifest_file);
+                        // println!("Prints manifest file: {}",manifest_file_name);
+                        
+                        writeln!(
+                            writer,
+                            "file {} seq {} type i",
+                            nextfile,
+                            seq
+                        )?;
+                        // println!("Absolute path: {:?}", std::fs::canonicalize(&manifest_file_name));
                     }
                 },
                 "--appendfsync" => appendfsync = arg_val.to_string(),
