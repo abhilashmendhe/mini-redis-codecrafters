@@ -317,6 +317,7 @@ pub async fn read_handler(
                                 }
                             }
                         } else if cmds[0] == String::from("CONFIG") {
+                            println!("cmds: {:?}",&cmds);
                             let form = if cmds.len() < 1 {
                                 "-ERR wrong number of arguments for 'config' command\r\n"
                                     .to_string()

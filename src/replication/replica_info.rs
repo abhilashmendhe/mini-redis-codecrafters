@@ -125,18 +125,22 @@ pub async fn init_replica_info(args: &Vec<String>) -> Result<SharedReplicaInfoEn
     );
 
     if args.len() > 4 {
-        // slave config
-        replica_info.set_role(String::from("slave"));
-        let mut master_host = String::new();
-        let mut master_port = 0;
+        
         if args[3].eq("--replicaof") {
+            // slave config
+            replica_info.set_role(String::from("slave"));
+            let mut master_host = String::new();
+            let mut master_port = 0;
+            
             let host_port = args[4].split_whitespace().collect::<Vec<_>>();
             master_host.push_str(host_port[0]);
             master_port = host_port[1].parse::<u16>()?;
-        }
-        let slave_replica_info =
+
+            let slave_replica_info =
             SlaveReplicaInfo::new(master_host, master_port, String::from("up"), -1);
-        replica_info.set_slave_info(Some(slave_replica_info));
+            replica_info.set_slave_info(Some(slave_replica_info));
+        }
+        
     }
     Ok(Arc::new(Mutex::new(replica_info)))
 }

@@ -24,27 +24,24 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
     let mut appenddirname = "appendonlydir".to_string();
     let mut appendfilename = "appendonly.aof".to_string();
     let mut appendfsync = "everysec".to_string();
-
-    for arg in args {
-        match arg.as_str() {
-            "--dir" => dirpath = arg.to_string(),
-            "--dbfilename" => rdb_filepath = format!("{}/{}", dirpath, &arg),
-            "--appendonly" => appendonly = arg.to_string(),
-            "--appenddirname" => appenddirname = arg.to_string(),
-            "--appendfilename" => appendfilename = arg.to_string(),
-            "--appendfsync" => appendfsync = arg.to_string(),
-            _ => {}
+    println!("init_rdb ---> {:?}",args);
+    if args.len() > 1 {
+        let mut i = 1;
+        while i < args.len() {
+            let arg = args[i].as_str();
+            let arg_val = args[i+1].as_str();
+            match arg {
+                "--dir" => dirpath = arg_val.to_string(),
+                "--dbfilename" => rdb_filepath = format!("{}/{}", dirpath, arg_val),
+                "--appendonly" => appendonly = arg_val.to_string(),
+                "--appenddirname" => appenddirname = arg_val.to_string(),
+                "--appendfilename" => appendfilename = arg_val.to_string(),
+                "--appendfsync" => appendfsync = arg_val.to_string(),
+                _ => {}
+            }
+            i += 2;
         }
     }
-    // println!("Safely out of for loop init_rdb");
-    // if args.len() > 4 {
-    //     if args[1] == "--dir".to_string() {
-    //         dirpath = args[2].clone();
-    //     }
-    //     if args[3] == "--dbfilename".to_string() {
-    //         rdb_filepath = format!("{}/{}", dirpath, &args[4]);
-    //     }
-    // }
     let rdb = RDB::new(
         dirpath,
         rdb_filepath,
