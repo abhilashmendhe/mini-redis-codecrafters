@@ -46,7 +46,25 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                 "--appendfilename" => {
                     appendfilename = arg_val.to_string();
                     if appendonly.eq("yes") {
-                        let _ = std::fs::write(format!("{}/{}/{}",dirpath,appenddirname,appendfilename), "");
+                        let mut max_n = 0;
+                        let read_dir_ex = format!("{}/{}",dirpath,appenddirname);
+                        let dir = std::fs::read_dir(read_dir_ex)?;
+                        for f in dir {
+                            let dir_entry = f?;
+                            if let Some(file) = dir_entry.file_name().to_str() {
+                                let num = file.split('.')
+                                    .nth(2)            // "100" in grape.aof.100.incr.aof
+                                    .and_then(|s| s.parse::<u32>().ok());
+                                if let Some(n) = num {
+                                    if n > max_n {
+                                        max_n = n;
+                                    }
+                                }
+                            }
+                        }
+                        let nextfile = format!("{}.{}.incr.aof",appendfilename,max_n+1);
+                        println!("next file: {}",nextfile);
+                        let _ = std::fs::write(format!("{}/{}/{}",dirpath,appenddirname,nextfile), "");
                     }
                 },
                 "--appendfsync" => appendfsync = arg_val.to_string(),
