@@ -12,6 +12,7 @@ pub struct RDB {
     appenddirname: String,
     appendfilename: String,
     appendfsync: String,
+    active_appendfile_path: String
 }
 
 pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
@@ -24,6 +25,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
     let mut appenddirname = "appendonlydir".to_string();
     let mut appendfilename = "appendonly.aof".to_string();
     let mut appendfsync = "everysec".to_string();
+    let mut active_appendfile_path = "".to_string();
     // println!("init_rdb ---> {:?}",args);
     if args.len() > 1 {
         let mut i = 1;
@@ -33,9 +35,17 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                 return Err(RedisErrors::ArgsErr);
             }
             let arg_val = args[i+1].as_str();
+            // println!("dir: {dirpath}, appendonly: {appendonly}, appenddirname: {appenddirname}, appendfilename: {appendfilename}, appendfsync: {appendfsync}");
             match arg {
-                "--dir" => dirpath = arg_val.to_string(),
-                "--dbfilename" => rdb_filepath = format!("{}/{}", dirpath, arg_val),
+                "--dir" => {
+                    dirpath = arg_val.to_string();
+                    // create new dirpath
+                     let _ = std::fs::create_dir(&dirpath);
+                },
+                "--dbfilename" => { 
+                    rdb_filepath = format!("{}/{}", dirpath, arg_val); 
+                    let _ = std::fs::File::create(&rdb_filepath);
+                },
                 "--appendonly" => appendonly = arg_val.to_string(),
                 "--appenddirname" => {
                     appenddirname = arg_val.to_string();
@@ -45,6 +55,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                 },
                 "--appendfilename" => {
                     appendfilename = arg_val.to_string();
+                    // println!("appendfilename: {}", appendfilename);
                     if appendonly.eq("yes") {
                         let mut max_n = 0;
                         let read_dir_ex = format!("{}/{}",dirpath,appenddirname);
@@ -89,6 +100,8 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                             nextfile,
                             seq
                         )?;
+                        println!("active_appendfile_path: {}/{}/{}", dirpath,appenddirname,nextfile);
+                        active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
                         // println!("Absolute path: {:?}", std::fs::canonicalize(&manifest_file_name));
                     }
                 },
@@ -105,6 +118,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
         appenddirname,
         appendfilename,
         appendfsync,
+        active_appendfile_path
     );
     Ok(Arc::new(Mutex::new(rdb)))
 }
@@ -117,6 +131,7 @@ impl RDB {
         appenddirname: String,
         appendfilename: String,
         appendfsync: String,
+        active_appendfile_path: String
     ) -> Self {
         RDB {
             dirpath,
@@ -125,6 +140,7 @@ impl RDB {
             appenddirname,
             appendfilename,
             appendfsync,
+            active_appendfile_path
         }
     }
     pub async fn dirpath(&self) -> String {
@@ -145,12 +161,47 @@ impl RDB {
     pub async fn appendfsync(&self) -> String {
         (&self.appendfsync).to_string()
     }
+    pub async fn active_appendfile_path(&self) -> String {
+        (&self.active_appendfile_path).to_string()
+    }
     pub fn _set_dirpath(&mut self, dirpath: String) {
         self.dirpath = dirpath;
     }
     pub fn _set_rdb_filepath(&mut self, rdb_filepath: String) {
         self.rdb_filepath = rdb_filepath;
     }
+}
+
+pub async fn append_to_active_appendonly_file(
+    command: String,
+    rdb: Arc<Mutex<RDB>>,
+) -> Result<(), RedisErrors> {
+    let rdb_g = rdb.lock().await;
+    let appendonly = rdb_g.appendonly().await;
+    if appendonly.eq("no") {
+        return Ok(());
+    }
+    let active_appendonly_file = rdb_g.active_appendfile_path().await;
+    let open_aaf = match OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&active_appendonly_file)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open file: {}", e);
+            return Err(RedisErrors::Io(e));
+        }
+    };
+    let mut writer = BufWriter::new(open_aaf);
+    // println!("Prints manifest file: {}",manifest_file_name);
+    
+    write!(
+        writer,
+        "{}",
+        command
+    )?;
+    Ok(())
 }
 
 pub async fn save(rdb: Arc<Mutex<RDB>>) -> Result<(), RedisErrors> {

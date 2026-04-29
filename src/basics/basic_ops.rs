@@ -11,7 +11,7 @@ use crate::{
         all_types::SharedMapT,
         kv_ds::{Value, ValueStruct},
     },
-    errors::RedisErrors,
+    errors::RedisErrors, rdb_persistence::rdb_persist::{RDB, append_to_active_appendonly_file},
 };
 
 pub fn init_map() -> SharedMapT {
@@ -36,14 +36,15 @@ pub async fn insert(key: String, value: ValueStruct, map: SharedMapT) {
 
 pub async fn set(
     key: String,
-    value: String,
+    val: String,
     px: Option<String>,
     kv_map: SharedMapT,
+    rdb: Option<Arc<Mutex<RDB>>>
 ) -> Result<String, RedisErrors> {
     // println!("cmds vec len: {}",cmds.len());
-    let value = match value.parse::<i64>() {
+    let value = match val.parse::<i64>() {
         Ok(num) => Value::NUMBER(num),
-        Err(_) => Value::STRING(value.to_string()),
+        Err(_) => Value::STRING(val.to_string()),
     };
     let mut value_struct = ValueStruct::new(
         // value.to_string(),
@@ -57,6 +58,12 @@ pub async fn set(
         value_struct.set_px(Some(px));
         value_struct.set_pxat(Some(now_ms));
     }
+    // println!("Before set");
+    if let Some(rdb) = rdb {
+        let command = format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",key.len(),key,val.len(),val);
+        append_to_active_appendonly_file(command, rdb).await?;
+    }
+    // println!("Inserted, now set");
     insert(key.to_string(), value_struct, kv_map.clone()).await;
     Ok("+OK\r\n".to_string())
 }

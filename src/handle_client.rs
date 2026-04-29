@@ -278,11 +278,11 @@ pub async fn read_handler(
                                     if if_watch {
                                         // check if WATCH
                                         if should_set {
-                                            set(key, value, px, Arc::clone(&kv_map)).await?;
+                                            set(key, value, px, Arc::clone(&kv_map),Some(rdb.clone())).await?;
                                         }
                                         "+OK\r\n".to_string()
                                     } else {
-                                        let form = set(key, value, px, Arc::clone(&kv_map)).await?;
+                                        let form = set(key, value, px, Arc::clone(&kv_map),Some(rdb.clone())).await?;
                                         form
                                     }
                                 };
@@ -317,7 +317,7 @@ pub async fn read_handler(
                                 }
                             }
                         } else if cmds[0] == String::from("CONFIG") {
-                            println!("cmds: {:?}",&cmds);
+                            // println!("cmds: {:?}",&cmds);
                             let form = if cmds.len() < 1 {
                                 "-ERR wrong number of arguments for 'config' command\r\n"
                                     .to_string()

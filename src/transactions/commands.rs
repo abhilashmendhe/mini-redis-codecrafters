@@ -37,7 +37,7 @@ pub async fn handle_transaction_commands(
             Ok(form)
         }
         CommandTransactions::Set { key, value, px } => {
-            let form = set(key, value, px, kv_map).await?;
+            let form = set(key, value, px, kv_map, None).await?;
             println!("{}", form);
             Ok(form)
         }
