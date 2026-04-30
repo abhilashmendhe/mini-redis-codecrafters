@@ -83,11 +83,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                         let nextfile = format!("{}.{}.incr.aof",appendfilename,seq);
 
                         if check_appendfile {
-                            active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
-                            
-                            // read and load all the commands from appendfile
-                            read_aof(active_appendfile_path.clone())?;
-
+                            // active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
                             i += 2;
                             continue;
                         }
@@ -128,6 +124,11 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
             i += 2;
         }
     }
+
+    // read manifest file
+    let aof_manifest_path = format!("{}/{}/{}.manifest",dirpath,appenddirname,appendfilename);
+    read_aof(aof_manifest_path.clone())?;
+    
     let rdb = RDB::new(
         dirpath,
         rdb_filepath,
@@ -137,7 +138,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
         appendfsync,
         active_appendfile_path
     );
-    println!("RDB: {:?}", rdb);
+    // println!("RDB: {:?}", rdb);
     Ok(Arc::new(Mutex::new(rdb)))
 }
 
