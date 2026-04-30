@@ -11,7 +11,8 @@ use crate::{
         all_types::SharedMapT,
         kv_ds::{Value, ValueStruct},
     },
-    errors::RedisErrors, rdb_persistence::rdb_persist::{RDB, append_to_active_appendonly_file},
+    errors::RedisErrors,
+    rdb_persistence::rdb_persist::{append_to_active_appendonly_file, RDB},
 };
 
 pub fn init_map() -> SharedMapT {
@@ -39,7 +40,7 @@ pub async fn set(
     val: String,
     px: Option<String>,
     kv_map: SharedMapT,
-    rdb: Option<Arc<Mutex<RDB>>>
+    rdb: Option<Arc<Mutex<RDB>>>,
 ) -> Result<String, RedisErrors> {
     // println!("cmds vec len: {}",cmds.len());
     let value = match val.parse::<i64>() {
@@ -60,7 +61,13 @@ pub async fn set(
     }
     // println!("Before set");
     if let Some(rdb) = rdb {
-        let command = format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",key.len(),key,val.len(),val);
+        let command = format!(
+            "*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+            key.len(),
+            key,
+            val.len(),
+            val
+        );
         append_to_active_appendonly_file(command, rdb).await?;
     }
     // println!("Inserted, now set");

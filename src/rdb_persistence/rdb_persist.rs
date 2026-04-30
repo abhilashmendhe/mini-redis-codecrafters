@@ -2,7 +2,7 @@ use std::{fs::{self, OpenOptions}, io::BufWriter, sync::Arc};
 use std::io::Write;
 use tokio::sync::Mutex;
 
-use crate::{basics::all_types::SharedRDBStructT, errors::RedisErrors};
+use crate::{aof::read_aof::read_aof, basics::all_types::SharedRDBStructT, errors::RedisErrors};
 
 #[derive(Debug)]
 pub struct RDB {
@@ -60,9 +60,14 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                         let mut max_n = 0;
                         let read_dir_ex = format!("{}/{}",dirpath,appenddirname);
                         let dir = std::fs::read_dir(read_dir_ex)?;
+                        let mut check_appendfile = false;
                         for f in dir {
                             let dir_entry = f?;
                             if let Some(file) = dir_entry.file_name().to_str() {
+                                if file.starts_with(&appendfilename) && file.ends_with(".aof") {
+                                    check_appendfile = true;
+                                    break;
+                                }
                                 let num = file.split('.')
                                     .nth(2)            // "100" in grape.aof.100.incr.aof
                                     .and_then(|s| s.parse::<u32>().ok());
@@ -73,8 +78,20 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                                 }
                             }
                         }
+                        
                         let seq = max_n + 1;
                         let nextfile = format!("{}.{}.incr.aof",appendfilename,seq);
+
+                        if check_appendfile {
+                            active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
+                            
+                            // read and load all the commands from appendfile
+                            read_aof(active_appendfile_path.clone())?;
+
+                            i += 2;
+                            continue;
+                        }
+
                         // println!("next file: {}",nextfile);
                         let _ = std::fs::write(format!("{}/{}/{}",dirpath,appenddirname,nextfile), "");
 
@@ -100,7 +117,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                             nextfile,
                             seq
                         )?;
-                        println!("active_appendfile_path: {}/{}/{}", dirpath,appenddirname,nextfile);
+                        // println!("active_appendfile_path: {}/{}/{}", dirpath,appenddirname,nextfile);
                         active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
                         // println!("Absolute path: {:?}", std::fs::canonicalize(&manifest_file_name));
                     }
@@ -120,6 +137,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
         appendfsync,
         active_appendfile_path
     );
+    println!("RDB: {:?}", rdb);
     Ok(Arc::new(Mutex::new(rdb)))
 }
 

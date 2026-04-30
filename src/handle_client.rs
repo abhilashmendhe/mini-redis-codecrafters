@@ -11,28 +11,43 @@ use tokio::{
 
 use crate::{
     acl::{
-        Acl, acl_auth::auth, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami
-    }, aof::get_command_handler::get_command_handler, basics::{
+        acl_auth::auth, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami,
+        Acl,
+    },
+    aof::get_command_handler::get_command_handler,
+    basics::{
         all_types::{SharedMapT, SharedRDBStructT},
         basic_ops::{get, get_pattern_match_keys, set},
-    }, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{
+    },
+    connection_handling::{RecvChannelT, SharedConnectionHashMapT},
+    errors::RedisErrors,
+    geospatial::{
         geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch,
-    }, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, optimistic_lock::{unwatch::unwatch, watch::watch}, parse_redis_bytes_file::try_parse_resp, pub_sub::{
-        pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe},
+    },
+    kv_lists::list_ops::{blpop, llen, lpop, lrange, push},
+    optimistic_lock::{unwatch::unwatch, watch::watch},
+    parse_redis_bytes_file::try_parse_resp,
+    pub_sub::{
+        pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType},
         publish_cmd::publish,
-    }, redis_server_info::ServerInfo, replication::{
+    },
+    redis_server_info::ServerInfo,
+    replication::{
         propagate_cmds::propagate_master_commands,
         replica_info::ReplicaInfo,
         replication_ops::{psync_ops, replconf_ops, wait_repl},
-    }, sorted_sets::{
+    },
+    sorted_sets::{
         zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem,
         zscore_ops::zscore,
-    }, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{
+    },
+    streams::stream_ops::{type_ops, xadd, xrange, xread},
+    transactions::{
         append_commands::{append_transaction_to_commands, get_command_trans_len},
         discard_multi::discard_multi,
         exec_multi::exec_multi,
         transac_ops::{incr_ops, multi},
-    }
+    },
 };
 
 use crate::transactions::commands::CommandTransactions;
@@ -278,11 +293,25 @@ pub async fn read_handler(
                                     if if_watch {
                                         // check if WATCH
                                         if should_set {
-                                            set(key, value, px, Arc::clone(&kv_map),Some(rdb.clone())).await?;
+                                            set(
+                                                key,
+                                                value,
+                                                px,
+                                                Arc::clone(&kv_map),
+                                                Some(rdb.clone()),
+                                            )
+                                            .await?;
                                         }
                                         "+OK\r\n".to_string()
                                     } else {
-                                        let form = set(key, value, px, Arc::clone(&kv_map),Some(rdb.clone())).await?;
+                                        let form = set(
+                                            key,
+                                            value,
+                                            px,
+                                            Arc::clone(&kv_map),
+                                            Some(rdb.clone()),
+                                        )
+                                        .await?;
                                         form
                                     }
                                 };
