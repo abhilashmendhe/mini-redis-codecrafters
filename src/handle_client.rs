@@ -19,6 +19,7 @@ use crate::{
         all_types::{SharedMapT, SharedRDBStructT},
         basic_ops::{get, get_pattern_match_keys, set},
     },
+    bitmaps::set_bit::set_bit,
     connection_handling::{RecvChannelT, SharedConnectionHashMapT},
     errors::RedisErrors,
     geospatial::{
@@ -696,6 +697,57 @@ pub async fn read_handler(
                                 }
                             };
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
+                        } else if cmds[0].to_lowercase().eq("setbit") {
+                            // println!("{}", cmds.len());
+                            if cmds.len() < 4 {
+                                send_to_client(
+                                    &connections,
+                                    &sock_addr,
+                                    b"-ERR wrong number of arguments for 'setbit' command\r\n",
+                                )
+                                .await?;
+                                break;
+                            }
+                            let offset = match cmds[2].parse::<u64>() {
+                                Ok(offset) => offset,
+                                Err(_) => {
+                                    send_to_client(
+                                        &connections,
+                                        &sock_addr,
+                                        b"-ERR bit offset is not an integer or out of range\r\n",
+                                    )
+                                    .await?;
+                                    break;
+                                }
+                            };
+                            let bit_val = match cmds[3].parse::<u64>() {
+                                Ok(bit_val) => {
+                                    if bit_val > 1 {
+                                        send_to_client(
+                                            &connections,
+                                            &sock_addr,
+                                            b"-ERR bit is not an integer or out of range\r\n",
+                                        )
+                                        .await?;
+                                        break;
+                                    } else {
+                                        bit_val as u8
+                                    }
+                                }
+                                Err(_) => {
+                                    send_to_client(
+                                        &connections,
+                                        &sock_addr,
+                                        b"-ERR bit is not an integer or out of range\r\n",
+                                    )
+                                    .await?;
+                                    break;
+                                }
+                            };
+                            // println!("{}, {}", offset, bit_val);
+                            let output =
+                                set_bit(&cmds[0], offset, bit_val, Arc::clone(&kv_map)).await?;
+                            send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
                         } else {
                             send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
                         }

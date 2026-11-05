@@ -34,4 +34,7 @@ pub enum RedisErrors {
 
     #[error("Incorrect number of arguments")]
     ArgsErr,
+
+    #[error("Propogate Err")]
+    PropogateErr,
 }

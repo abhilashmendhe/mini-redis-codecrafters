@@ -24,6 +24,7 @@ mod streams;
 mod transactions;
 
 pub mod aof;
+pub mod bitmaps;
 pub mod pub_sub;
 
 pub async fn get_current_unix_time() -> Result<u128, RedisErrors> {

@@ -9,7 +9,7 @@ use std::{
 use tokio::sync::Mutex;
 
 use crate::{
-    connection_handling::ClientId, sorted_sets::SortedSetValues,
+    bitmaps::bm_struct::BitMap, connection_handling::ClientId, sorted_sets::SortedSetValues,
     streams::stream_struct::StreamStruct,
 };
 
@@ -21,6 +21,7 @@ pub enum Value {
     STREAM(LinkedList<StreamStruct>),
     #[allow(non_camel_case_types)]
     SORTED_SET(BTreeSet<SortedSetValues>), // STREAM(BTreeMap<u128, LinkedList<StreamStruct>>),
+    BITMAP(BitMap),
     #[allow(non_camel_case_types)]
     NOT_AVAILABLE,
 }

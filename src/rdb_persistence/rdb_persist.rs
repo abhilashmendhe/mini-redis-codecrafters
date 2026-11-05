@@ -1,8 +1,12 @@
-use std::{fs::{self, OpenOptions}, io::BufWriter, sync::Arc};
 use std::io::Write;
+use std::{
+    fs::{self, OpenOptions},
+    io::BufWriter,
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
-use crate::{aof::read_aof::read_aof, basics::all_types::SharedRDBStructT, errors::RedisErrors};
+use crate::{basics::all_types::SharedRDBStructT, errors::RedisErrors};
 
 #[derive(Debug)]
 pub struct RDB {
@@ -12,7 +16,7 @@ pub struct RDB {
     appenddirname: String,
     appendfilename: String,
     appendfsync: String,
-    active_appendfile_path: String
+    active_appendfile_path: String,
 }
 
 pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
@@ -31,34 +35,34 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
         let mut i = 1;
         while i < args.len() {
             let arg = args[i].as_str();
-            if i+1 >= args.len() {
+            if i + 1 >= args.len() {
                 return Err(RedisErrors::ArgsErr);
             }
-            let arg_val = args[i+1].as_str();
+            let arg_val = args[i + 1].as_str();
             // println!("dir: {dirpath}, appendonly: {appendonly}, appenddirname: {appenddirname}, appendfilename: {appendfilename}, appendfsync: {appendfsync}");
             match arg {
                 "--dir" => {
                     dirpath = arg_val.to_string();
                     // create new dirpath
-                     let _ = std::fs::create_dir(&dirpath);
-                },
-                "--dbfilename" => { 
-                    rdb_filepath = format!("{}/{}", dirpath, arg_val); 
+                    let _ = std::fs::create_dir(&dirpath);
+                }
+                "--dbfilename" => {
+                    rdb_filepath = format!("{}/{}", dirpath, arg_val);
                     let _ = std::fs::File::create(&rdb_filepath);
-                },
+                }
                 "--appendonly" => appendonly = arg_val.to_string(),
                 "--appenddirname" => {
                     appenddirname = arg_val.to_string();
                     if appendonly.eq("yes") {
-                        let _ = std::fs::create_dir(format!("{}/{}",dirpath,appenddirname));
+                        let _ = std::fs::create_dir(format!("{}/{}", dirpath, appenddirname));
                     }
-                },
+                }
                 "--appendfilename" => {
                     appendfilename = arg_val.to_string();
                     // println!("appendfilename: {}", appendfilename);
                     if appendonly.eq("yes") {
                         let mut max_n = 0;
-                        let read_dir_ex = format!("{}/{}",dirpath,appenddirname);
+                        let read_dir_ex = format!("{}/{}", dirpath, appenddirname);
                         let dir = std::fs::read_dir(read_dir_ex)?;
                         let mut check_appendfile = false;
                         for f in dir {
@@ -68,8 +72,9 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                                     check_appendfile = true;
                                     break;
                                 }
-                                let num = file.split('.')
-                                    .nth(2)            // "100" in grape.aof.100.incr.aof
+                                let num = file
+                                    .split('.')
+                                    .nth(2) // "100" in grape.aof.100.incr.aof
                                     .and_then(|s| s.parse::<u32>().ok());
                                 if let Some(n) = num {
                                     if n > max_n {
@@ -78,9 +83,9 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                                 }
                             }
                         }
-                        
+
                         let seq = max_n + 1;
-                        let nextfile = format!("{}.{}.incr.aof",appendfilename,seq);
+                        let nextfile = format!("{}.{}.incr.aof", appendfilename, seq);
 
                         if check_appendfile {
                             // active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
@@ -89,10 +94,14 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                         }
 
                         // println!("next file: {}",nextfile);
-                        let _ = std::fs::write(format!("{}/{}/{}",dirpath,appenddirname,nextfile), "");
+                        let _ = std::fs::write(
+                            format!("{}/{}/{}", dirpath, appenddirname, nextfile),
+                            "",
+                        );
 
                         // now create or add into .manifest file in the same appenddirname
-                        let manifest_file_name = format!("{}/{}/{}.manifest",dirpath, appenddirname, appendfilename);
+                        let manifest_file_name =
+                            format!("{}/{}/{}.manifest", dirpath, appenddirname, appendfilename);
                         let manifest_file = match OpenOptions::new()
                             .append(true)
                             .create(true)
@@ -106,18 +115,14 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
                         };
                         let mut writer = BufWriter::new(manifest_file);
                         // println!("Prints manifest file: {}",manifest_file_name);
-                        
-                        writeln!(
-                            writer,
-                            "file {} seq {} type i",
-                            nextfile,
-                            seq
-                        )?;
+
+                        writeln!(writer, "file {} seq {} type i", nextfile, seq)?;
                         // println!("active_appendfile_path: {}/{}/{}", dirpath,appenddirname,nextfile);
-                        active_appendfile_path = format!("{}/{}/{}", dirpath,appenddirname,nextfile);
+                        active_appendfile_path =
+                            format!("{}/{}/{}", dirpath, appenddirname, nextfile);
                         // println!("Absolute path: {:?}", std::fs::canonicalize(&manifest_file_name));
                     }
-                },
+                }
                 "--appendfsync" => appendfsync = arg_val.to_string(),
                 _ => {}
             }
@@ -136,7 +141,7 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
         appenddirname,
         appendfilename,
         appendfsync,
-        active_appendfile_path
+        active_appendfile_path,
     );
     // println!("RDB: {:?}", rdb);
     Ok(Arc::new(Mutex::new(rdb)))
@@ -150,7 +155,7 @@ impl RDB {
         appenddirname: String,
         appendfilename: String,
         appendfsync: String,
-        active_appendfile_path: String
+        active_appendfile_path: String,
     ) -> Self {
         RDB {
             dirpath,
@@ -159,7 +164,7 @@ impl RDB {
             appenddirname,
             appendfilename,
             appendfsync,
-            active_appendfile_path
+            active_appendfile_path,
         }
     }
     pub async fn dirpath(&self) -> String {
@@ -214,12 +219,8 @@ pub async fn append_to_active_appendonly_file(
     };
     let mut writer = BufWriter::new(open_aaf);
     // println!("Prints manifest file: {}",manifest_file_name);
-    
-    write!(
-        writer,
-        "{}",
-        command
-    )?;
+
+    write!(writer, "{}", command)?;
     Ok(())
 }
 
