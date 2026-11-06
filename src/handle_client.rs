@@ -708,7 +708,7 @@ pub async fn read_handler(
                                 .await?;
                                 break;
                             }
-                            let offset = match cmds[2].parse::<u64>() {
+                            let offset = match cmds[2].parse::<usize>() {
                                 Ok(offset) => offset,
                                 Err(_) => {
                                     send_to_client(
@@ -744,9 +744,10 @@ pub async fn read_handler(
                                     break;
                                 }
                             };
-                            // println!("{}, {}", offset, bit_val);
+                            // need to handle px and pxat ... For now passwing None to both
                             let output =
-                                set_bit(&cmds[0], offset, bit_val, Arc::clone(&kv_map)).await?;
+                                set_bit(&cmds[0], offset, bit_val, Arc::clone(&kv_map), None, None)
+                                    .await?;
                             send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
                         } else {
                             send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;

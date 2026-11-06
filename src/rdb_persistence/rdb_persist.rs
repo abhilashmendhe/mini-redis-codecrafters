@@ -131,9 +131,9 @@ pub fn init_rdb(args: &[String]) -> Result<SharedRDBStructT, RedisErrors> {
     }
 
     // read manifest file
-    let aof_manifest_path = format!("{}/{}/{}.manifest",dirpath,appenddirname,appendfilename);
-    read_aof(aof_manifest_path.clone())?;
-    
+    let aof_manifest_path = format!("{}/{}/{}.manifest", dirpath, appenddirname, appendfilename);
+    // read_aof(aof_manifest_path.clone())?;
+
     let rdb = RDB::new(
         dirpath,
         rdb_filepath,
