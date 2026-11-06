@@ -19,7 +19,7 @@ use crate::{
         all_types::{SharedMapT, SharedRDBStructT},
         basic_ops::{get, get_pattern_match_keys, set},
     },
-    bitmaps::set_bit::set_bit,
+    bitmaps::{get_bit::get_bit, set_bit::set_bit},
     connection_handling::{RecvChannelT, SharedConnectionHashMapT},
     errors::RedisErrors,
     geospatial::{
@@ -699,6 +699,7 @@ pub async fn read_handler(
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
                         } else if cmds[0].to_lowercase().eq("setbit") {
                             // println!("{}", cmds.len());
+                            let key = &cmds[1];
                             if cmds.len() < 4 {
                                 send_to_client(
                                     &connections,
@@ -746,8 +747,33 @@ pub async fn read_handler(
                             };
                             // need to handle px and pxat ... For now passwing None to both
                             let output =
-                                set_bit(&cmds[0], offset, bit_val, Arc::clone(&kv_map), None, None)
+                                set_bit(key, offset, bit_val, Arc::clone(&kv_map), None, None)
                                     .await?;
+                            send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
+                        } else if cmds[0].to_lowercase().eq("getbit") {
+                            let key = &cmds[1];
+                            if cmds.len() < 3 {
+                                send_to_client(
+                                    &connections,
+                                    &sock_addr,
+                                    b"-ERR wrong number of arguments for 'getbit' command\r\n",
+                                )
+                                .await?;
+                                break;
+                            }
+                            let offset = match cmds[2].parse::<usize>() {
+                                Ok(offset) => offset,
+                                Err(_) => {
+                                    send_to_client(
+                                        &connections,
+                                        &sock_addr,
+                                        b"-ERR bit offset is not an integer or out of range\r\n",
+                                    )
+                                    .await?;
+                                    break;
+                                }
+                            };
+                            let output = get_bit(key, offset, Arc::clone(&kv_map)).await?;
                             send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
                         } else {
                             send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;

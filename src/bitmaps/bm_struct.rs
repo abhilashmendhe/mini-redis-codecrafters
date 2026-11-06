@@ -58,10 +58,10 @@ impl BitMap {
         // 1. get the offset position
         let offset_arr_pos = offset_pos / 8;
         let offset_bit_pos = offset_pos % 8;
-
+        // println!("{} - {}", offset_arr_pos, offset_bit_pos);
         // 2. get offset number
         let offset_num = &self.offsets[offset_arr_pos];
-
+        // println!("{} - {:b}", offset_num, offset_num);
         (offset_num >> offset_bit_pos) & 1
     }
 }
