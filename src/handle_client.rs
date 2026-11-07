@@ -238,7 +238,7 @@ pub async fn read_handler(
                                 format!("-ERR Can't execute 'get': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n")
                             };
                             send_to_client(&connections, &sock_addr, form.as_bytes()).await?;
-                        } else if cmds[0] == String::from("SET") {
+                        } else if cmds[0].to_lowercase() == String::from("set") {
                             let form = if !ps_flag {
                                 let key = cmds[1].to_string();
                                 let value = cmds[2].to_string();

@@ -15,7 +15,7 @@ pub async fn incr_ops(key: String, kv_map: SharedMapT) -> Result<String, RedisEr
     let f = {
         if let Some(value_struct) = kv_map.lock().await.get_mut(&key) {
             match value_struct.mut_value() {
-                Value::STRING(_) => {
+                Value::STRING_BITMAP(_) => {
                     form.push_str("-ERR value is not an integer or out of range\r\n");
                 }
                 Value::NUMBER(num) => {

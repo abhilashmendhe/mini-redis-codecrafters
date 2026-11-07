@@ -26,7 +26,7 @@ pub async fn type_ops(key: String, kv_map: SharedMapT) -> Result<String, RedisEr
         if let Some(v) = kv_map.lock().await.get(&key) {
             let value = v.value();
             let v_type = match value {
-                Value::STRING(_) | Value::BITMAP(_) => "+string\r\n",
+                Value::STRING_BITMAP(_) => "+string\r\n",
                 Value::NUMBER(_) => "+number\r\n",
                 Value::LIST(_) => "+list\r\n",
                 Value::STREAM(_) => "+stream\r\n",

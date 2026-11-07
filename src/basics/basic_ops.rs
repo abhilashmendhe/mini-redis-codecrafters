@@ -10,6 +10,7 @@ use crate::{
     basics::{
         all_types::SharedMapT,
         kv_ds::{Value, ValueStruct},
+        string_and_bitmap::StringAndBitmap,
     },
     errors::RedisErrors,
     rdb_persistence::rdb_persist::{append_to_active_appendonly_file, RDB},
@@ -32,7 +33,7 @@ pub async fn clean_map(map: SharedMapT) {
 }
 
 pub async fn insert(key: String, value: ValueStruct, map: SharedMapT) {
-    map.lock().await.insert(key, value);
+    map.lock().await.insert(key.clone(), value.clone());
 }
 
 pub async fn set(
@@ -45,7 +46,28 @@ pub async fn set(
     // println!("cmds vec len: {}",cmds.len());
     let value = match val.parse::<i64>() {
         Ok(num) => Value::NUMBER(num),
-        Err(_) => Value::STRING(val.to_string()),
+        Err(_) => {
+            let mut str_bitmap = StringAndBitmap::default();
+            // 1. set string value
+            str_bitmap.set_value(&val);
+
+            // 2. set bitmap value
+            let bitmap = str_bitmap.mut_bitmap();
+            let mut count = 0;
+            for ch in val.as_bytes() {
+                let asc = *ch;
+                let mut i = 128;
+                for _ in 0..8 {
+                    // print!("{},({count}) ", (i & asc));
+                    if i & asc > 0 {
+                        bitmap.set_offset_bit(count, 1);
+                    }
+                    count += 1;
+                    i >>= 1;
+                }
+            }
+            Value::STRING_BITMAP(str_bitmap)
+        }
     };
     let mut value_struct = ValueStruct::new(
         // value.to_string(),
@@ -91,11 +113,11 @@ pub async fn get(key: String, kv_map: SharedMapT) -> String {
         }
         // Some(value_struct)
         match value_struct.value() {
-            Value::STRING(s) => {
+            Value::STRING_BITMAP(s) => {
                 form.push('$');
-                form.push_str(&s.len().to_string());
+                form.push_str(&s.value().len().to_string());
                 form.push_str("\r\n");
-                form.push_str(&s);
+                form.push_str(&s.value());
                 form.push_str("\r\n");
             }
             Value::NUMBER(num) => {

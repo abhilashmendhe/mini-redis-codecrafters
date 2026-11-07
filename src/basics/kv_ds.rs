@@ -9,19 +9,22 @@ use std::{
 use tokio::sync::Mutex;
 
 use crate::{
-    bitmaps::bm_struct::BitMap, connection_handling::ClientId, sorted_sets::SortedSetValues,
+    basics::string_and_bitmap::StringAndBitmap, bitmaps::bm_struct::BitMap,
+    connection_handling::ClientId, sorted_sets::SortedSetValues,
     streams::stream_struct::StreamStruct,
 };
 
 #[derive(Debug, Clone)]
 pub enum Value {
-    STRING(String),
+    // STRING(String),
+    #[allow(non_camel_case_types)]
+    STRING_BITMAP(StringAndBitmap),
     NUMBER(i64),
     LIST(VecDeque<String>),
     STREAM(LinkedList<StreamStruct>),
     #[allow(non_camel_case_types)]
     SORTED_SET(BTreeSet<SortedSetValues>), // STREAM(BTreeMap<u128, LinkedList<StreamStruct>>),
-    BITMAP(BitMap),
+    // BITMAP(BitMap),
     #[allow(non_camel_case_types)]
     NOT_AVAILABLE,
 }
@@ -53,7 +56,8 @@ impl ValueStruct {
     }
     pub fn value_len(&self) -> usize {
         match &self.value {
-            Value::STRING(s) => s.len(),
+            // Value::STRING(s) => s.len(),
+            Value::STRING_BITMAP(sb) => sb.value().len(),
             Value::NUMBER(num) => num.to_string().len(),
             Value::LIST(items) => items.len(),
             Value::STREAM(stream_items) => stream_items.len(),

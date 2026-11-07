@@ -6,6 +6,7 @@ use crate::{
         all_types::SharedMapT,
         basic_ops::insert,
         kv_ds::{Value, ValueStruct},
+        string_and_bitmap::StringAndBitmap,
     },
     errors::RedisErrors,
     rdb_persistence::{lzf_alg::decompress, rdb_persist::RDB},
@@ -109,7 +110,9 @@ async fn extract_key_pairs(
                     let pxat_str = &utx[4..utx.len() - 1];
                     let pxat = pxat_str.parse::<u128>()?;
                     let key = &kv_vec[1];
-                    let value = Value::STRING(kv_vec[2].to_string());
+                    let mut str_bitm = StringAndBitmap::default();
+                    str_bitm.set_value(&kv_vec[2]);
+                    let value = Value::STRING_BITMAP(str_bitm);
                     let value_struct = ValueStruct::new(value, Some(pxat), Some(pxat));
                     // tokio::runtime::Runtime::new()?.block_on(
                     insert(key.to_string(), value_struct, kv_map.clone()).await;
@@ -118,7 +121,9 @@ async fn extract_key_pairs(
                 }
             } else {
                 let key = &kv_vec[0];
-                let value = Value::STRING(kv_vec[1].to_string());
+                let mut str_bitm = StringAndBitmap::default();
+                str_bitm.set_value(&kv_vec[1]);
+                let value = Value::STRING_BITMAP(str_bitm);
                 let value_struct = ValueStruct::new(value, None, None);
                 // tokio::runtime::Runtime::new()?.block_on(
                 insert(key.to_string(), value_struct, kv_map.clone()).await;

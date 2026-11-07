@@ -9,6 +9,7 @@ use crate::basics::{
     all_types::SharedMapT,
     basic_ops::insert,
     kv_ds::{Value, ValueStruct},
+    string_and_bitmap::StringAndBitmap,
 };
 
 pub async fn master_reader_handle(
@@ -37,7 +38,11 @@ pub async fn master_reader_handle(
             let value = cmd[5].as_str();
             let value = match value.parse::<i64>() {
                 Ok(num) => Value::NUMBER(num),
-                Err(_) => Value::STRING(value.to_string()),
+                Err(_) => {
+                    let mut str_bitm = StringAndBitmap::default();
+                    str_bitm.set_value(value);
+                    Value::STRING_BITMAP(str_bitm)
+                }
             };
             let mut value_struct = ValueStruct::new(value, None, None);
             if cmd.len() >= 7 {

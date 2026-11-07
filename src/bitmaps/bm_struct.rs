@@ -2,6 +2,17 @@
 pub struct BitMap {
     pub offsets: Vec<u8>,
     pub count: u64,
+    pub max_ind: usize,
+}
+
+impl Default for BitMap {
+    fn default() -> Self {
+        Self {
+            offsets: Default::default(),
+            count: Default::default(),
+            max_ind: Default::default(),
+        }
+    }
 }
 
 /*
@@ -29,12 +40,19 @@ pub struct BitMap {
 impl BitMap {
     pub fn new() -> Self {
         let offsets = vec![0 as u8; 8192];
-        Self { offsets, count: 0 }
+        Self {
+            offsets,
+            count: 0,
+            max_ind: 0,
+        }
     }
     pub fn set_offset_bit(&mut self, offset: usize, bit_value: u8) -> u8 {
         // 1. get the offset position
         let offset_arr_pos = offset / 8;
         let offset_bit_pos = offset % 8;
+
+        // 1.1 set max_ind
+        self.max_ind = self.max_ind.max(offset_arr_pos);
 
         // 2. get offset number
         let offset_num = &mut self.offsets[offset_arr_pos];
