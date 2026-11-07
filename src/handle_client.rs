@@ -11,39 +11,22 @@ use tokio::{
 
 use crate::{
     acl::{
-        acl_auth::auth, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami,
-        Acl,
-    },
-    aof::get_command_handler::get_command_handler,
-    basics::{
+        Acl, acl_auth::auth, acl_getuser::acl_get_user, acl_setuser::acl_set_user, acl_whoami::whoami,
+    }, aof::get_command_handler::get_command_handler, basics::{
         all_types::{SharedMapT, SharedRDBStructT},
         basic_ops::{get, get_pattern_match_keys, set},
-    },
-    bitmaps::{get_bit::get_bit, set_bit::set_bit},
-    connection_handling::{RecvChannelT, SharedConnectionHashMapT},
-    errors::RedisErrors,
-    geospatial::{
+    }, bitmaps::{get_bit::get_bit, get_str_len::get_str_len, set_bit::set_bit}, connection_handling::{RecvChannelT, SharedConnectionHashMapT}, errors::RedisErrors, geospatial::{
         geoadd_ops::geoadd, geodist_ops::geodist_ops, geopos_ops::geopos, geosearch_ops::geosearch,
-    },
-    kv_lists::list_ops::{blpop, llen, lpop, lrange, push},
-    optimistic_lock::{unwatch::unwatch, watch::watch},
-    parse_redis_bytes_file::try_parse_resp,
-    pub_sub::{
-        pub_sub_ds::{subscribe, unsubscribe, SharedPubSubType},
-        publish_cmd::publish,
-    },
-    redis_server_info::ServerInfo,
-    replication::{
+    }, kv_lists::list_ops::{blpop, llen, lpop, lrange, push}, optimistic_lock::{unwatch::unwatch, watch::watch}, parse_redis_bytes_file::try_parse_resp, pub_sub::{
+        pub_sub_ds::{SharedPubSubType, subscribe, unsubscribe}, publish_cmd::publish,
+    }, redis_server_info::ServerInfo, replication::{
         propagate_cmds::propagate_master_commands,
         replica_info::ReplicaInfo,
         replication_ops::{psync_ops, replconf_ops, wait_repl},
-    },
-    sorted_sets::{
+    }, sorted_sets::{
         zadd_ops::zadd, zcard_ops::zcard, zrange_ops::zrange, zrank_ops::zrank, zrem_ops::zrem,
         zscore_ops::zscore,
-    },
-    streams::stream_ops::{type_ops, xadd, xrange, xread},
-    transactions::{
+    }, streams::stream_ops::{type_ops, xadd, xrange, xread}, transactions::{
         append_commands::{append_transaction_to_commands, get_command_trans_len},
         discard_multi::discard_multi,
         exec_multi::exec_multi,
@@ -774,6 +757,20 @@ pub async fn read_handler(
                                 }
                             };
                             let output = get_bit(key, offset, Arc::clone(&kv_map)).await?;
+                            send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
+                        } else if cmds[0].to_lowercase().eq("strlen") {
+                            // println!("call strlen");
+                            let key = &cmds[1];
+                            if cmds.len() < 2 {
+                                send_to_client(
+                                    &connections,
+                                    &sock_addr,
+                                    b"-ERR wrong number of arguments for 'strlen' command\r\n",
+                                )
+                                .await?;
+                                break;
+                            }
+                            let output = get_str_len(&key, Arc::clone(&kv_map)).await?;
                             send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
                         } else {
                             send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;
