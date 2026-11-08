@@ -20,11 +20,10 @@ pub async fn bitops_and(
     kv: SharedMapT,
     rdb: Option<Arc<Mutex<RDB>>>,
 ) -> Result<String, RedisErrors> {
-    let mut kv_gaurd = { kv.lock().await };
-
-    let vs1 = kv_gaurd.get(k1);
-    let vs2 = kv_gaurd.get(k2);
-
+    let (vs1, vs2) = {
+        let kv_gaurd = kv.lock().await;
+        (kv_gaurd.get(k1).cloned(), kv_gaurd.get(k2).cloned())
+    };
     if vs1.is_none() && vs2.is_none() {
         return Ok(":0\r\n".to_string());
     } else if vs1.is_none() || vs2.is_none() {
@@ -36,18 +35,28 @@ pub async fn bitops_and(
             rdb,
         )
         .await?;
-        return Ok(":1\r\n".to_string());
+        let value_len = if !vs1.is_none() {
+            vs1.unwrap().value_len()
+        } else {
+            vs2.unwrap().value_len()
+        };
+        return Ok(format!(":{}\r\n", value_len));
     }
-
     // now unwrap here
     let vs1 = vs1.unwrap();
     let vs2 = vs2.unwrap();
-    let mut count = 0;
+    // println!("{} ---- {}", vs1.value_len(), vs2.value_len());
+    let mut kv_gaurd = { kv.lock().await };
+    let mut count = vs1.value_len().max(vs2.value_len()) as u64;
     if let Value::STRING_BITMAP(str_bit1) = vs1.value() {
         if let Value::STRING_BITMAP(str_bit2) = vs2.value() {
+            // println!("{}, {}", str_bit1.value())
             let bitmap1 = str_bit1.bitmap();
             let bitmap2 = str_bit2.bitmap();
             let (new_value, new_bitmap, c) = bitmap1.bitop_and(&bitmap2);
+            // println!("new_value: {:?}", new_value);
+            // println!("new_value: {}, and its len: {}", new_value, new_value.len());
+            count = c;
             let mut sb = StringAndBitmap::default();
             sb.set_bitmap(new_bitmap);
             sb.set_value(&new_value);
@@ -55,7 +64,6 @@ pub async fn bitops_and(
                 new_key.to_string(),
                 ValueStruct::new(Value::STRING_BITMAP(sb), None, None),
             );
-            count = c;
         }
     }
     // Ok(":1\r\n".to_string())
@@ -69,25 +77,25 @@ pub async fn bitops_or(
     kv: SharedMapT,
     rdb: Option<Arc<Mutex<RDB>>>,
 ) -> Result<String, RedisErrors> {
-    let mut kv_gaurd = { kv.lock().await };
-
-    let vs1 = kv_gaurd.get(k1);
-    let vs2 = kv_gaurd.get(k2);
-
+    let (vs1, vs2) = {
+        let kv_gaurd = kv.lock().await;
+        (kv_gaurd.get(k1).cloned(), kv_gaurd.get(k2).cloned())
+    };
     if vs1.is_none() && vs2.is_none() {
         return Ok(":0\r\n".to_string());
     } else if vs1.is_none() {
-        if let Value::STRING_BITMAP(str_bit) = vs2.unwrap().value() {
+        if let Value::STRING_BITMAP(str_bit) = vs2.clone().unwrap().value() {
             set(new_key.to_string(), str_bit.value(), None, kv.clone(), rdb).await?;
             return Ok(":1\r\n".to_string());
         }
     } else if vs2.is_none() {
-        if let Value::STRING_BITMAP(str_bit) = vs1.unwrap().value() {
+        if let Value::STRING_BITMAP(str_bit) = vs1.clone().unwrap().value() {
             set(new_key.to_string(), str_bit.value(), None, kv.clone(), rdb).await?;
             return Ok(":1\r\n".to_string());
         }
     }
 
+    let mut kv_gaurd = { kv.lock().await };
     // now unwrap here
     let vs1 = vs1.unwrap();
     let vs2 = vs2.unwrap();

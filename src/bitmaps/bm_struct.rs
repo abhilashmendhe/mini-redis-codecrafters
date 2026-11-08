@@ -98,22 +98,31 @@ impl BitMap {
             self.count
         }
     }
+    pub fn highest_ind_pos(&self) -> usize {
+        let mut hip = 0;
+        for (i, num) in self.offsets.iter().enumerate() {
+            if *num > 0 {
+                hip = i;
+            }
+        }
+        hip + 1
+    }
     pub fn bitop_and(&self, bm2: &BitMap) -> (String, BitMap, u64) {
         let mut new_bitmap = BitMap::new();
 
         let bm_offsets1 = &self.offsets;
         let bm_offsets2 = &bm2.offsets;
-        let mut c = 0;
+        let bmof1_ind = self.highest_ind_pos();
+        let bmof2_ind = bm2.highest_ind_pos();
+        new_bitmap.max_ind = bmof1_ind.max(bmof2_ind);
+        let max_ind = new_bitmap.max_ind;
         for i in 0..bm_offsets1.len() {
             new_bitmap.offsets[i] = bm_offsets1[i] & bm_offsets2[i];
-            if new_bitmap.offsets[i] > 0 {
-                c += 1;
-            }
         }
         (
-            String::from_utf8_lossy(&new_bitmap.offsets).to_string(),
+            String::from_utf8_lossy(&new_bitmap.offsets[..new_bitmap.max_ind]).to_string(),
             new_bitmap,
-            c,
+            max_ind as u64,
         )
     }
     pub fn bitop_or(&self, bm2: &BitMap) -> (String, BitMap, u64) {
@@ -121,17 +130,17 @@ impl BitMap {
 
         let bm_offsets1 = &self.offsets;
         let bm_offsets2 = &bm2.offsets;
-        let mut c = 0;
+        let bmof1_ind = self.highest_ind_pos();
+        let bmof2_ind = bm2.highest_ind_pos();
+        new_bitmap.max_ind = bmof1_ind.max(bmof2_ind);
+        let max_ind = new_bitmap.max_ind;
         for i in 0..bm_offsets1.len() {
             new_bitmap.offsets[i] = bm_offsets1[i] | bm_offsets2[i];
-            if new_bitmap.offsets[i] > 0 {
-                c += 1;
-            }
         }
         (
-            String::from_utf8_lossy(&new_bitmap.offsets).to_string(),
+            String::from_utf8_lossy(&new_bitmap.offsets[..new_bitmap.max_ind]).to_string(),
             new_bitmap,
-            c,
+            max_ind as u64,
         )
     }
 }

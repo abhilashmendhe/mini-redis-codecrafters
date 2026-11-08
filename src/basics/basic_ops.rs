@@ -92,7 +92,6 @@ pub async fn set(
         );
         append_to_active_appendonly_file(command, rdb).await?;
     }
-    // println!("Inserted, now set");
     insert(key.to_string(), value_struct, kv_map.clone()).await;
     Ok("+OK\r\n".to_string())
 }
