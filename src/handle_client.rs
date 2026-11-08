@@ -20,7 +20,10 @@ use crate::{
         basic_ops::{get, get_pattern_match_keys, set},
     },
     bitmaps::{
-        count_total_bit_set::count_total_set_bit, get_bit::get_bit, get_str_len::get_str_len,
+        bitops::{bitops_and, bitops_or},
+        count_total_bit_set::count_total_set_bit,
+        get_bit::get_bit,
+        get_str_len::get_str_len,
         set_bit::set_bit,
     },
     connection_handling::{RecvChannelT, SharedConnectionHashMapT},
@@ -839,6 +842,44 @@ pub async fn read_handler(
                             };
                             let output =
                                 count_total_set_bit(key, l, r, Arc::clone(&kv_map)).await?;
+                            send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
+                        } else if cmds[0].to_lowercase().eq("bitop") {
+                            let ops = &cmds[1].to_lowercase();
+                            let output = if ops.eq("and") {
+                                if cmds.len() < 5 {
+                                    send_to_client(
+                                        &connections,
+                                        &sock_addr,
+                                        b"-ERR wrong number of arguments for 'bitop' command\r\n",
+                                    )
+                                    .await?;
+                                    break;
+                                }
+                                let new_key = &cmds[2];
+                                let k1 = &cmds[3];
+                                let k2 = &cmds[4];
+                                bitops_and(new_key, k1, k2, Arc::clone(&kv_map), Some(rdb.clone()))
+                                    .await?
+                            } else if ops.eq("or") {
+                                if cmds.len() < 5 {
+                                    send_to_client(
+                                        &connections,
+                                        &sock_addr,
+                                        b"-ERR wrong number of arguments for 'bitop' command\r\n",
+                                    )
+                                    .await?;
+                                    break;
+                                }
+                                let new_key = &cmds[2];
+                                let k1 = &cmds[3];
+                                let k2 = &cmds[4];
+                                bitops_or(new_key, k1, k2, Arc::clone(&kv_map), Some(rdb.clone()))
+                                    .await?
+                            } else {
+                                send_to_client(&connections, &sock_addr, b"-ERR syntax error\r\n")
+                                    .await?;
+                                break;
+                            };
                             send_to_client(&connections, &sock_addr, output.as_bytes()).await?;
                         } else {
                             send_to_client(&connections, &sock_addr, b"+OK\r\n").await?;

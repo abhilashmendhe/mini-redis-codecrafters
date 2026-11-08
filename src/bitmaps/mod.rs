@@ -1,3 +1,4 @@
+pub mod bitops;
 pub mod bm_struct;
 pub mod count_total_bit_set;
 pub mod get_bit;

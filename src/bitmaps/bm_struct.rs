@@ -89,7 +89,7 @@ impl BitMap {
             let lr = r.unwrap(); // this is handled in handle_client.rs file for `bitcount` check
             let mut c = 0;
             while lv <= lr {
-                let mut n = self.offsets[lv];
+                let n = self.offsets[lv];
                 c += n.count_ones();
                 lv += 1;
             }
@@ -97,5 +97,41 @@ impl BitMap {
         } else {
             self.count
         }
+    }
+    pub fn bitop_and(&self, bm2: &BitMap) -> (String, BitMap, u64) {
+        let mut new_bitmap = BitMap::new();
+
+        let bm_offsets1 = &self.offsets;
+        let bm_offsets2 = &bm2.offsets;
+        let mut c = 0;
+        for i in 0..bm_offsets1.len() {
+            new_bitmap.offsets[i] = bm_offsets1[i] & bm_offsets2[i];
+            if new_bitmap.offsets[i] > 0 {
+                c += 1;
+            }
+        }
+        (
+            String::from_utf8_lossy(&new_bitmap.offsets).to_string(),
+            new_bitmap,
+            c,
+        )
+    }
+    pub fn bitop_or(&self, bm2: &BitMap) -> (String, BitMap, u64) {
+        let mut new_bitmap = BitMap::new();
+
+        let bm_offsets1 = &self.offsets;
+        let bm_offsets2 = &bm2.offsets;
+        let mut c = 0;
+        for i in 0..bm_offsets1.len() {
+            new_bitmap.offsets[i] = bm_offsets1[i] | bm_offsets2[i];
+            if new_bitmap.offsets[i] > 0 {
+                c += 1;
+            }
+        }
+        (
+            String::from_utf8_lossy(&new_bitmap.offsets).to_string(),
+            new_bitmap,
+            c,
+        )
     }
 }
