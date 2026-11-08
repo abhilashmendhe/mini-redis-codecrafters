@@ -62,11 +62,13 @@ impl BitMap {
             //
             if bit_value == 1 {
                 *offset_num = *offset_num | (1 << offset_bit_pos);
+                self.count += 1;
             }
             0 as u8
         } else {
             if bit_value == 0 {
                 *offset_num = *offset_num & !(1 << offset_bit_pos);
+                self.count -= 1;
             }
             1
         };
@@ -81,5 +83,19 @@ impl BitMap {
         let offset_num = &self.offsets[offset_arr_pos];
         // println!("{} - {:b}", offset_num, offset_num);
         (offset_num >> offset_bit_pos) & 1
+    }
+    pub fn get_bit_count(&self, l: Option<usize>, r: Option<usize>) -> u64 {
+        if let Some(mut lv) = l {
+            let lr = r.unwrap(); // this is handled in handle_client.rs file for `bitcount` check
+            let mut c = 0;
+            while lv <= lr {
+                let mut n = self.offsets[lv];
+                c += n.count_ones();
+                lv += 1;
+            }
+            c as u64
+        } else {
+            self.count
+        }
     }
 }

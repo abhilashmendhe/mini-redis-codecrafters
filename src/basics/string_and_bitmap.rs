@@ -34,4 +34,7 @@ impl StringAndBitmap {
     pub fn mut_bitmap(&mut self) -> &mut BitMap {
         &mut self.bitmap
     }
+    pub fn get_bit_counts(&self, l: Option<usize>, r: Option<usize>) -> u64 {
+        self.bitmap.get_bit_count(l, r)
+    }
 }
